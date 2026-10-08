@@ -1,0 +1,313 @@
+// src/components/AppBar.tsx
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../auth/supabase";
+import type { BusinessSettings } from "../types";
+
+interface SupabaseUser {
+    id: string;
+    username: string;
+    role: string;
+    avatar_url?: string | null;
+    tenant_id?: string | null;
+}
+
+function mapSettingsFromSupabase(row: Record<string, any>): BusinessSettings {
+  return {
+    id: row.id || "main",
+    tenantId: row.tenant_id || undefined,
+    businessName: row.business_name || "",
+    phone: row.phone || "",
+    email: row.email || "",
+    address: row.address || "",
+    logo: row.logo || "",
+    loginBackground: row.login_background || "",
+    website: row.website || "",
+    header: row.header || undefined,
+    adminProfile: row.admin_profile || undefined,
+    themeColor: row.theme_color || undefined,
+    appBarItems: row.app_bar_items || [],
+    createdAt: row.created_at || new Date().toISOString(),
+  };
+}
+
+// Cache the avatar image itself as a base64 data URL so it renders even with no network.
+async function cacheAvatarImage(userId: string, url: string) {
+    try {
+        // Already a data URL — cache directly
+        if (url.startsWith("data:")) {
+            localStorage.setItem(`cachedAvatar_${userId}`, url);
+            localStorage.setItem(`cachedAvatarUrl_${userId}`, url);
+            return;
+        }
+
+        // Skip if we already cached this exact image
+        if (localStorage.getItem(`cachedAvatarUrl_${userId}`) === url) return;
+
+        const res = await fetch(url, { cache: "force-cache" });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (blob.size > 1_000_000) return; // skip oversized files to protect localStorage
+
+        const dataUrl = await new Promise<string | null>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+        });
+
+        if (dataUrl) {
+            localStorage.setItem(`cachedAvatar_${userId}`, dataUrl);
+            localStorage.setItem(`cachedAvatarUrl_${userId}`, url);
+        }
+    } catch {
+        /* offline or quota exceeded — ignore, remote URL fallback still applies */
+    }
+}
+
+export default function AppBar() {
+    const navigate = useNavigate();
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    const [settings, setSettings] = useState<BusinessSettings | null>(null);
+    const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
+    const [avatarError, setAvatarError] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
+    // Reset image-error fallback whenever the avatar source changes
+    useEffect(() => { setAvatarError(false); }, [currentUser?.avatar_url]);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const parsedUser = JSON.parse(localStorage.getItem("currentUser") || "{}");
+                let tenantId = parsedUser?.tenantId || parsedUser?.tenant_id || localStorage.getItem("activeTenantId");
+
+                // 1. Load from Local Storage INSTANTLY
+                const localSettings = localStorage.getItem("localBusinessSettings");
+                if (localSettings) {
+                    setSettings(JSON.parse(localSettings));
+                }
+
+                // 2. Try fetching from Supabase to update in background
+                if (tenantId) {
+                    try {
+                        const { data: settingsData } = await supabase
+                            .from("business_settings")
+                            .select("*")
+                            .eq("tenant_id", tenantId)
+                            .maybeSingle();
+
+                        if (settingsData) {
+                            const mapped = mapSettingsFromSupabase(settingsData);
+                            setSettings(mapped);
+                            localStorage.setItem("localBusinessSettings", JSON.stringify(mapped));
+                            return;
+                        }
+
+                        const { data: tenantData } = await supabase
+                            .from("tenants")
+                            .select("id, business_name, phone")
+                            .eq("id", tenantId)
+                            .maybeSingle();
+
+                        if (tenantData) {
+                            const fallbackSettings = {
+                                id: "main", tenantId: tenantData.id, businessName: tenantData.business_name || "",
+                                phone: tenantData.phone || "", email: "", address: "", logo: "", loginBackground: "",
+                                website: "", header: undefined, adminProfile: undefined, themeColor: undefined,
+                                appBarItems: [], createdAt: new Date().toISOString(),
+                            };
+                            setSettings(fallbackSettings);
+                            localStorage.setItem("localBusinessSettings", JSON.stringify(fallbackSettings));
+                        }
+                    } catch (e) {
+                        console.warn("Offline: AppBar using local settings");
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to load settings", error);
+            }
+        };
+
+        const loadUser = async () => {
+            const savedUserStr = localStorage.getItem("currentUser");
+            const parsedUser = savedUserStr ? JSON.parse(savedUserStr) : null;
+            if (!parsedUser?.id) { setCurrentUser(null); return; }
+
+            // 1. OFFLINE-FIRST: hydrate instantly from local caches so the avatar
+            //    (plus name/role) renders even when Supabase is unreachable.
+            let cachedProfile: any = null;
+            try { cachedProfile = JSON.parse(localStorage.getItem(`cachedProfile_${parsedUser.id}`) || "null"); } catch { cachedProfile = null; }
+            const cachedAvatar = localStorage.getItem(`cachedAvatar_${parsedUser.id}`);
+
+            setCurrentUser({
+                id: parsedUser.id,
+                username: cachedProfile?.username || parsedUser.username,
+                role: cachedProfile?.role || parsedUser.role,
+                avatar_url: cachedAvatar || cachedProfile?.avatar_url || parsedUser.profilePic || parsedUser.avatar_url || null,
+                tenant_id: parsedUser.tenantId,
+            });
+
+            // 2. Refresh from Supabase in the background (also refreshes the offline caches)
+            try {
+                const { data: profileData } = await supabase
+                    .from("profile_settings")
+                    .select("username, avatar_url, role")
+                    .eq("user_id", parsedUser.id)
+                    .maybeSingle();
+
+                if (profileData) {
+                    const freshAvatar = profileData.avatar_url || parsedUser.profilePic || null;
+
+                    setCurrentUser({
+                        id: parsedUser.id,
+                        username: profileData.username || parsedUser.username,
+                        role: profileData.role || parsedUser.role,
+                        avatar_url: freshAvatar,
+                        tenant_id: parsedUser.tenantId,
+                    });
+
+                    // Cache profile metadata for the next offline launch
+                    localStorage.setItem(`cachedProfile_${parsedUser.id}`, JSON.stringify({
+                        id: parsedUser.id,
+                        username: profileData.username || parsedUser.username,
+                        role: profileData.role || parsedUser.role,
+                        avatar_url: freshAvatar,
+                    }));
+
+                    // Cache the avatar image itself as a data URL (works fully offline)
+                    if (freshAvatar) {
+                        cacheAvatarImage(parsedUser.id, freshAvatar);
+                    } else {
+                        // User removed their avatar — clear stale cache
+                        localStorage.removeItem(`cachedAvatar_${parsedUser.id}`);
+                        localStorage.removeItem(`cachedAvatarUrl_${parsedUser.id}`);
+                    }
+                }
+            } catch (err) {
+                console.warn("Profile fetch error (Offline):", err);
+                // Keep showing the cached/offline user — do nothing.
+            }
+        };
+
+        fetchSettings();
+        loadUser();
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleLogout = () => {
+        localStorage.removeItem("currentUser");
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("activeTenantId");
+        localStorage.removeItem("adminDeviceId");
+        window.location.replace("/login");
+    };
+
+    const handleSettingsClick = () => {
+        if (!currentUser) return;
+        if (currentUser.role === "trainer") navigate("/trainer/settings");
+        else if (currentUser.role === "admin") navigate("/admin/settings");
+        else navigate("/user/settings");
+    };
+
+    const businessName = settings?.businessName || "";
+    const businessAddress = settings?.address || "";
+    const businessLogo = settings?.logo || "";
+    const businessPhone = settings?.phone || "";
+    const businessEmail = settings?.email || "";
+    const businessWebsite = settings?.website || "";
+    const hasContactInfo = businessAddress || businessPhone || businessEmail || businessWebsite;
+    const hasLeftInfo = businessName || businessLogo || hasContactInfo;
+    const userInitial = currentUser?.username ? currentUser.username.charAt(0).toUpperCase() : "";
+    let userRole = currentUser?.role ? currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1) : "";
+    const showContactText = windowWidth > 820;
+
+    return (
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "rgba(255,255,255,0.8)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "0.33px solid #E5E5EA", flexShrink: 0, zIndex: 1000, width: "100%", boxSizing: "border-box", gap: "24px", position: "sticky", top: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0, overflow: "hidden" }}>
+                {hasLeftInfo && (
+                    <>
+                        {businessLogo && <img src={businessLogo} alt="Logo" style={{ width: "32px", height: "32px", borderRadius: "8px", objectFit: "cover", flexShrink: 0 }} />}
+                        <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 1 }}>
+                            {businessName && <h1 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#1C1C1E", letterSpacing: "-0.2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{businessName}</h1>}
+                            {hasContactInfo && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", marginTop: businessName ? "2px" : "0" }}>
+                                    {businessPhone && (
+                                        <a href={`tel:${businessPhone}`} style={{ fontSize: "12px", color: "#8E8E93", textDecoration: "none", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                            {showContactText && <span>{businessPhone}</span>}
+                                        </a>
+                                    )}
+                                    {businessAddress && (
+                                        <div style={{ fontSize: "12px", color: "#8E8E93", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "200px" }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                                            {showContactText && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{businessAddress}</span>}
+                                        </div>
+                                    )}
+                                    {businessEmail && (
+                                        <a href={`mailto:${businessEmail}`} style={{ fontSize: "12px", color: "#8E8E93", textDecoration: "none", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "150px" }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                            {showContactText && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{businessEmail}</span>}
+                                        </a>
+                                    )}
+                                    {businessWebsite && (
+                                        <a href={businessWebsite.startsWith('http') ? businessWebsite : `https://${businessWebsite}`} target="_blank" rel="noreferrer" style={{ fontSize: "12px", color: "#8E8E93", textDecoration: "none", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "150px" }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                            {showContactText && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{businessWebsite.replace(/^https?:\/\//, '')}</span>}
+                                        </a>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "16px", flexShrink: 0, minWidth: 0 }}>
+                {currentUser && (
+                    <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
+                        <div onClick={() => setMenuOpen(!menuOpen)} style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", padding: "4px 8px 4px 4px", borderRadius: "20px", background: menuOpen ? "rgba(118, 118, 128, 0.12)" : "transparent", transition: "background 0.2s ease" }}>
+                            {currentUser.avatar_url && !avatarError ? (
+                                <img src={currentUser.avatar_url} alt="Profile" onError={() => setAvatarError(true)} style={{ width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid rgba(0,0,0,0.05)" }} />
+                            ) : userInitial ? (
+                                <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#0A84FF", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "14px", flexShrink: 0 }}>{userInitial}</div>
+                            ) : null}
+                            {(currentUser?.username || userRole) && (
+                                <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                                    {currentUser?.username && <span style={{ fontSize: "14px", fontWeight: "600", color: "#1C1C1E" }}>{currentUser.username}</span>}
+                                    {userRole && <span style={{ fontSize: "11px", color: "#8E8E93", marginTop: "1px" }}>{userRole}</span>}
+                                </div>
+                            )}
+                        </div>
+
+                        {menuOpen && (
+                            <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "rgba(255, 255, 255, 0.8)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: "14px", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: "0.5px solid rgba(0,0,0,0.05)", width: "180px", padding: "6px", zIndex: 2000 }}>
+                                <button onClick={handleSettingsClick} style={{ width: "100%", padding: "10px 12px", border: "none", background: "transparent", color: "#1C1C1E", fontSize: "15px", fontWeight: "500", textAlign: "left", cursor: "pointer", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit", boxSizing: "border-box" }} onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.05)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                                    Settings
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                </button>
+                                <button onClick={handleLogout} style={{ width: "100%", padding: "10px 12px", border: "none", background: "transparent", color: "#FF3B30", fontSize: "15px", fontWeight: "500", textAlign: "left", cursor: "pointer", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit", boxSizing: "border-box" }} onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.05)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                                    Logout
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </header>
+    );
+}

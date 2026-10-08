@@ -1,0 +1,57 @@
+/* =========================================
+   NAVBAR
+   ========================================= */
+.navbar { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 14px 0; }
+.nav-container { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); flex-shrink: 0; }
+.brand-logo { height: 40px; width: auto; border-radius: 8px; }
+.brand-logo-fallback { width: 40px; height: 40px; background: var(--primary); color: #fff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; }
+.brand-text { display: flex; flex-direction: column; }
+.brand-name { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 18px; line-height: 1.2; color: var(--text); }
+.brand-tagline { font-size: 11px; color: var(--text-muted); letter-spacing: 0.3px; }
+
+.nav-right { display: flex; align-items: center; gap: 32px; }
+.nav-links { display: flex; gap: 28px; }
+
+/* Nav Link Base & Underline Animation */
+.nav-links a { 
+  text-decoration: none; 
+  color: var(--text-muted); 
+  font-size: 14px; 
+  font-weight: 500; 
+  transition: color 0.2s; 
+  white-space: nowrap; 
+  position: relative; 
+  padding-bottom: 6px; /* Space for the underline */
+  display: inline-block; /* CRITICAL: Allows the ::after width to work */
+}
+
+.nav-links a::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  bottom: 0;
+  left: 0;
+  background-color: var(--primary);
+  transition: width 0.3s ease;
+}
+
+.nav-links a:hover { 
+  color: var(--primary); 
+}
+
+.nav-links a:hover::after {
+  width: 100%; /* Underline expands on hover */
+}
+
+.nav-links a.nav-link-active {
+  color: var(--primary); /* Text turns blue */
+}
+
+.nav-links a.nav-link-active::after {
+  width: 100%; /* Underline stays expanded on active page */
+}
+
+.subscribe-btn { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.1s; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; letter-spacing: 0.3px; }
+.subscribe-btn:hover { background: var(--primary-hover); transform: translateY(-1px); }

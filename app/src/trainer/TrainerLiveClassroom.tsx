@@ -1,0 +1,542 @@
+// src/trainer/TrainerLiveClassroom.tsx
+// TRAINER live classroom: session control, blackboard with drawing tools,
+// uploaded-material (lesson pages) controls, per-learner mic/cam permissions,
+// raised hands, and the trainer's own AV bar.
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import type { CourseMaterial, LivePresentation, User, BusinessSettings, Stroke } from "../types";
+import LiveClassView from "../components/LiveClassView";
+import DrawingBlackboard, { type ToolType, type FontOptions } from "../components/DrawingBlackboard";
+import ClassChat from "../components/ClassChat";
+import MediaHelpModal, { type MediaProblem } from "../components/MediaHelpModal";
+import { probeDevice } from "../utils/mediaPermissions";
+import { useDaily, useDailyEvent, DailyAudio } from "@daily-co/daily-react";
+import { supabase } from "../auth/supabase";
+import { db } from "../database/db";
+import { getCourseMaterials } from "../database/materialDB";
+import { startLiveSession, endLiveSession, getLiveSession } from "../database/liveSessionDB";
+import { startPresentation, getLivePresentation, updatePresentation, clearPresentation } from "../database/livePresentationDB";
+
+const C = { textPrimary: "#1C1C1E", textTertiary: "#8E8E93", bg: "#F2F2F7", card: "#FFFFFF", separator: "#E5E5EA", medBlue: "#007AFF", medBlueBg: "#E8F2FF", red: "#FF3B30", redBg: "#FFEFEE", purple: "#AF52DE", purpleBg: "#F5F0FF", orange: "#FF9F0A", orangeBg: "#FFF6EB", green: "#34C759", greenBg: "#EAF9EE", iosBtnBg: "#E5E5EA", panelBg: "#F8F9FA" };
+
+function getFileMeta(fileType: string) {
+  if (fileType.includes("pdf")) return { icon: "📄", color: C.red, bg: C.redBg, label: "PDF" };
+  if (fileType.includes("video")) return { icon: "🎬", color: C.purple, bg: C.purpleBg, label: "Video" };
+  if (fileType.includes("audio")) return { icon: "🎵", color: C.purple, bg: C.purpleBg, label: "Audio" };
+  if (fileType.includes("image")) return { icon: "🖼️", color: C.green, bg: C.greenBg, label: "Image" };
+  return { icon: "📁", color: C.textTertiary, bg: C.bg, label: "File" };
+}
+
+declare global { interface Window { activeTrainerCourse: string | undefined; } }
+window.activeTrainerCourse = window.activeTrainerCourse || undefined;
+
+function mapMaterial(m: Record<string, unknown>): CourseMaterial {
+  return { id: m.id as string, courseId: m.course_id as string, tenantId: m.tenant_id as string, title: (m.title as string) || "Untitled", description: (m.description as string) || "", fileUrl: (m.file_data as string) || (m.file_url as string) || "", fileName: (m.file_name as string) || (m.title as string) || "Untitled", fileType: (m.file_type as string) || "application/octet-stream", allowDownload: (m.allow_download as boolean) ?? true, uploadedBy: (m.uploaded_by as string) || "", uploadedAt: (m.uploaded_at as string) || (m.created_at as string) || "", isPresentation: (m.is_presentation as boolean) ?? false, presentationOrder: (m.presentation_order as number) ?? 0 };
+}
+
+export default function TrainerLiveClassroom() {
+  const { courseId } = useParams();
+  const navigate = useNavigate();
+  const currentUser = JSON.parse(localStorage.getItem("currentUser") || "{}");
+  const tenantId = currentUser.tenantId;
+
+  const [sessionActive, setSessionActive] = useState(false);
+  const [presentation, setPresentation] = useState<CourseMaterial | null>(null);
+  const [liveState, setLiveState] = useState<LivePresentation | null>(null);
+  const [materials, setMaterials] = useState<CourseMaterial[]>([]);
+  const [raisedHands, setRaisedHands] = useState<Array<Record<string, unknown> & { username?: string }>>([]);
+  const [activeLearners, setActiveLearners] = useState<User[]>([]);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [trainer, setTrainer] = useState<Record<string, unknown> | null>(null);
+  // Per-learner granular classroom permissions (mic + cam)
+  const [speakerPerms, setSpeakerPerms] = useState<Record<string, { can_audio: boolean; can_video: boolean }>>({});
+
+  const [isBlackboardMode, setIsBlackboardMode] = useState(false);
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isVideoExpanded, setIsVideoExpanded] = useState(false);
+
+  const [bbInput, setBbInput] = useState("");
+  const [activeTool, setActiveTool] = useState<ToolType | "label">("pen");
+  const [penColor, setPenColor] = useState("#FFFFFF");
+  const [penWidth, setPenWidth] = useState(4);
+  const [eraserSize, setEraserSize] = useState(30);
+  const [fontOptions] = useState<FontOptions>({ fontFamily: "Arial", fontSize: 24, fontColor: "#FFFFFF", fontWeight: "normal", fontStyle: "normal" });
+
+  const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const daily = useDaily();
+  const [isMicOn, setIsMicOn] = useState(false);
+  const [isCamOn, setIsCamOn] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isVoiceJoined, setIsVoiceJoined] = useState(false);
+  const [videoTrack, setVideoTrack] = useState<MediaStreamTrack | null>(null);
+
+  // In-app media problem modal (replaces suppressed window.alert)
+  const [mediaProblem, setMediaProblem] = useState<MediaProblem | null>(null);
+
+  useDailyEvent("track-started", (event) => { if (event.participant?.local && event.track?.kind === "video") setVideoTrack(event.track as unknown as MediaStreamTrack); });
+  useDailyEvent("track-stopped", (event) => { if (event.participant?.local && event.track?.kind === "video") setVideoTrack(null); });
+
+  useEffect(() => {
+    const fetchInitial = async () => {
+      if (!tenantId) return;
+      const { data: s } = await supabase.from("business_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
+      if (s) setSettings({ id: s.id, businessName: s.business_name || "", address: s.address || "", phone: s.phone || "", email: s.email || "", website: s.website || "", logo: s.logo || "", header: s.header || "", adminProfile: s.admin_profile || "", loginBackground: s.login_background || "", themeColor: s.theme_color || "", appBarItems: s.app_bar_items || [], tenantId: s.tenant_id, createdAt: s.created_at });
+      const { data: u } = await supabase.from("profile_settings").select("*").eq("user_id", currentUser.id).maybeSingle();
+      if (u) setTrainer(u); else setTrainer(currentUser);
+    };
+    fetchInitial();
+  }, [currentUser.id, tenantId]);
+
+  useEffect(() => {
+    if (window.activeTrainerCourse && window.activeTrainerCourse !== courseId) { console.warn("You can only host one live lesson at a time."); navigate("/trainer"); return; }
+    window.activeTrainerCourse = courseId;
+    return () => { window.activeTrainerCourse = undefined; };
+  }, [courseId, navigate]);
+
+  const fetchLiveData = useCallback(async () => {
+    if (!courseId || !tenantId || !currentUser.id) return;
+
+    const localSess = await getLiveSession(courseId);
+    if (localSess) setSessionActive(localSess.active);
+
+    const localPres = await getLivePresentation(courseId);
+    if (localPres) {
+      setLiveState(localPres);
+      setIsBlackboardMode(localPres.isBlackboard ?? false);
+      if (localPres.materialId) {
+        const localMat = await db.materials.get(localPres.materialId);
+        if (localMat) setPresentation(localMat);
+      }
+    }
+
+    const localMats = await getCourseMaterials(courseId);
+    if (localMats.length > 0) setMaterials(localMats.sort((a, b) => (a.presentationOrder ?? 0) - (b.presentationOrder ?? 0)));
+
+    try {
+      const { data: liveSess } = await supabase.from("live_session").select("*").eq("course_id", courseId).maybeSingle();
+      if (liveSess) {
+        setSessionActive(liveSess.active);
+        await db.liveSessions.put({ id: liveSess.id, courseId, active: liveSess.active, trainerId: liveSess.trainer_id, startedAt: liveSess.started_at, updatedAt: liveSess.updated_at, createdAt: liveSess.created_at, tenantId: liveSess.tenant_id });
+      }
+
+      const { data: livePres } = await supabase.from("live_presentations").select("*").eq("course_id", courseId).maybeSingle();
+      if (livePres) {
+        const mappedPres = { id: livePres.id, courseId: livePres.course_id, materialId: livePres.material_id || "", isBlackboard: livePres.is_blackboard ?? false, blackboardStrokes: (livePres.blackboard_strokes as Stroke[]) || [], blackboardLines: (livePres.blackboard_lines as string[]) || [], blackboardLabels: (livePres.blackboard_labels as any[]) || [], startedBy: livePres.started_by, updatedAt: livePres.updated_at, currentPage: livePres.current_page ?? 1, tenantId: livePres.tenant_id };
+        setLiveState(mappedPres);
+        setIsBlackboardMode(mappedPres.isBlackboard);
+        await updatePresentation(mappedPres);
+
+        if (mappedPres.materialId) {
+          const { data: mat } = await supabase.from("course_materials").select("*").eq("id", mappedPres.materialId).maybeSingle();
+          if (mat) {
+            const mappedMat = mapMaterial(mat);
+            setPresentation(mappedMat);
+            await db.materials.put(mappedMat);
+          }
+        } else setPresentation(null);
+      } else { setLiveState(null); setIsBlackboardMode(false); setPresentation(null); }
+
+      const { data: mats } = await supabase.from("course_materials").select("*").eq("course_id", courseId).order("presentation_order", { ascending: true });
+      if (mats && mats.length > 0) {
+        const mappedMats = mats.map(mapMaterial);
+        setMaterials(mappedMats);
+        await db.materials.bulkPut(mappedMats);
+      }
+
+      const { data: hands } = await supabase.from("raised_hands").select("*").eq("course_id", courseId);
+      if (hands && hands.length > 0) {
+        const userIds = hands.map((h: any) => h.user_id as string);
+        const { data: handUsers } = await supabase.from("users").select("id, username").in("id", userIds);
+        const userMap = new Map((handUsers || []).map((u: any) => [u.id as string, u.username as string]));
+        const mappedHands = hands
+          .filter((h: any) => userMap.has(h.user_id as string))
+          .map((h: any) => ({ ...h, username: userMap.get(h.user_id as string)! }))
+          .sort((a: any, b: any) => new Date(a.created_at as string).getTime() - new Date(b.created_at as string).getTime());
+        setRaisedHands(mappedHands);
+      } else setRaisedHands([]);
+
+      const { data: atts } = await supabase.from("active_attendances").select("user_id").eq("course_id", courseId);
+      if (atts && atts.length > 0) {
+        const attUserIds = atts.map((a: Record<string, unknown>) => a.user_id as string).filter((id: string) => id !== currentUser.id);
+        const { data: attUsers } = await supabase.from("users").select("*").in("id", attUserIds).eq("role", "trainee");
+        setActiveLearners(attUsers ? attUsers.map((u: Record<string, unknown>) => ({ id: u.id as string, username: u.username as string, email: (u.email as string) || "", password: (u.password as string) || "", role: (u.role as "trainer" | "trainee" | "admin"), profilePic: (u.profile_pic as string) || "", phone: (u.phone as string) || "", assignedCourses: (u.assigned_courses as string[]) || [], tenantId: u.tenant_id as string, createdAt: u.created_at as string })) : []);
+      } else setActiveLearners([]);
+
+      // Granular mic/cam permissions for every learner in this course
+      const { data: speakers } = await supabase.from("allowed_speakers").select("user_id, can_audio, can_video, allowed").eq("course_id", courseId);
+      const permsMap: Record<string, { can_audio: boolean; can_video: boolean }> = {};
+      (speakers || []).forEach((s: Record<string, unknown>) => {
+        permsMap[s.user_id as string] = { can_audio: (s.can_audio as boolean) ?? (s.allowed as boolean) ?? false, can_video: (s.can_video as boolean) ?? false };
+      });
+      setSpeakerPerms(permsMap);
+    } catch (err) { console.warn("Offline: Using local data for classroom"); }
+  }, [courseId, tenantId, currentUser.id]);
+
+  useEffect(() => { fetchLiveData(); }, [fetchLiveData]);
+
+  useEffect(() => {
+    if (!courseId) return;
+    const handleDebouncedFetch = () => { if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current); fetchTimerRef.current = setTimeout(() => fetchLiveData(), 300); };
+    const channel = supabase.channel(`live-classroom-${courseId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "live_session", filter: `course_id=eq.${courseId}` }, handleDebouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "live_presentations", filter: `course_id=eq.${courseId}` }, handleDebouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "course_materials", filter: `course_id=eq.${courseId}` }, handleDebouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "raised_hands", filter: `course_id=eq.${courseId}` }, handleDebouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "active_attendances", filter: `course_id=eq.${courseId}` }, handleDebouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "allowed_speakers", filter: `course_id=eq.${courseId}` }, handleDebouncedFetch)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current); };
+  }, [courseId, fetchLiveData]);
+
+  async function getDailyRoomUrl() { if (!courseId) return null; const API_BASE = import.meta.env.VITE_API_URL || "https://medstat-3rxl.onrender.com"; try { const response = await fetch(`${API_BASE}/api/create-daily-room`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data.url; } catch (error) { return null; } }
+
+  // ---- CLASSROOM AV (trainer's own devices) ----
+  // Controlled from the floating classroom bar — NOT from the chat sidebar.
+  async function ensureJoined(): Promise<boolean> {
+    if (!daily) return false;
+    if (isVoiceJoined) return true;
+    try {
+      setIsConnecting(true);
+      const roomUrl = await getDailyRoomUrl();
+      if (!roomUrl) return false;
+      await daily.join({ url: roomUrl, startVideoOff: true });
+      await daily.setLocalAudio(false);
+      await daily.setLocalVideo(false);
+      setIsVoiceJoined(true);
+      return true;
+    } catch (e) { return false; }
+    finally { setIsConnecting(false); }
+  }
+
+  // OS-level device probe before switching ON — surfaces the Windows privacy
+  // toggle / device-in-use / no-device cases via the in-app modal.
+  // (Trainers are never app-locked, so there is no "locked" case here.)
+  async function toggleMic() {
+    const ok = await ensureJoined();
+    if (!ok) return;
+    if (!isMicOn) {
+      const probe = await probeDevice("audio");
+      if (probe !== "ok") { setMediaProblem({ kind: probe, device: "mic" }); return; }
+    }
+    try { const n = !isMicOn; await daily!.setLocalAudio(n); setIsMicOn(n); } catch (e) {}
+  }
+
+  async function toggleCam() {
+    const ok = await ensureJoined();
+    if (!ok) return;
+    if (!isCamOn) {
+      const probe = await probeDevice("video");
+      if (probe !== "ok") { setMediaProblem({ kind: probe, device: "cam" }); return; }
+    }
+    try { const n = !isCamOn; await daily!.setLocalVideo(n); setIsCamOn(n); } catch (e) {}
+  }
+
+  async function toggleBlackboard() {
+    if (!courseId || !tenantId) return; setActiveTool("pen"); const newMode = !isBlackboardMode; setIsBlackboardMode(newMode);
+    if (newMode) setPresentation(null); else if (materials.length > 0) { const currentMatId = liveState?.materialId || materials[0].id; setPresentation(materials.find(m => m.id === currentMatId) || materials[0]); }
+
+    if (liveState?.id) {
+      const updated = { ...liveState, isBlackboard: newMode, updatedAt: new Date().toISOString() };
+      setLiveState(updated);
+      await updatePresentation(updated);
+      await supabase.from("live_presentations").update({ is_blackboard: newMode, updated_at: new Date().toISOString() }).eq("id", liveState.id);
+    } else {
+      const newPres = { id: crypto.randomUUID(), tenant_id: tenantId, course_id: courseId, started_by: currentUser.id, material_id: "", current_page: 1, is_blackboard: newMode, blackboard_strokes: [], blackboard_lines: [], blackboard_labels: [], updated_at: new Date().toISOString() };
+      await supabase.from("live_presentations").delete().eq("course_id", courseId);
+      await supabase.from("live_presentations").insert(newPres);
+      await startPresentation(courseId, "", currentUser.id);
+      fetchLiveData();
+    }
+  }
+
+  async function handleStrokeEnd(points: { x: number; y: number }[], tool: ToolType, color?: string, width?: number) {
+    if (!liveState?.id) return; const newStroke = { id: crypto.randomUUID(), points, color: color || "#FFFFFF", width: width || 4, tool: tool || "pen" };
+    setLiveState(prev => { if (!prev) return prev; const updatedStrokes = [...(prev.blackboardStrokes || []), newStroke]; const updatedPres = { ...prev, blackboardStrokes: updatedStrokes }; updatePresentation(updatedPres); supabase.from("live_presentations").update({ blackboard_strokes: updatedStrokes }).eq("id", prev.id).then(() => {}); return updatedPres; });
+  }
+
+  async function handleErase(eraserPos: { x: number; y: number }, radius: number) {
+    if (!liveState?.id) return; const currentStrokes = liveState.blackboardStrokes || []; const newStrokes: Stroke[] = [];
+    for (const stroke of currentStrokes) { const segments: { x: number; y: number }[][] = []; let currentSegment: { x: number; y: number }[] = []; for (const p of stroke.points) { if (Math.hypot(p.x - eraserPos.x, p.y - eraserPos.y) < radius) { if (currentSegment.length > 0) { segments.push(currentSegment); currentSegment = []; } } else currentSegment.push(p); } if (currentSegment.length > 0) segments.push(currentSegment); for (const seg of segments) newStrokes.push({ id: crypto.randomUUID(), points: seg, color: stroke.color, width: stroke.width, tool: stroke.tool }); }
+    setLiveState(prev => { if (!prev) return prev; const updatedPres = { ...prev, blackboardStrokes: newStrokes }; updatePresentation(updatedPres); supabase.from("live_presentations").update({ blackboard_strokes: newStrokes }).eq("id", prev.id).then(() => {}); return updatedPres; });
+  }
+
+  async function clearBlackboard() {
+    if (!liveState?.id) return;
+    setLiveState(prev => prev ? { ...prev, blackboardStrokes: [], blackboardLines: [], blackboardLabels: [] } : null);
+    await updatePresentation({ ...liveState, blackboardStrokes: [], blackboardLines: [], blackboardLabels: [] });
+    await supabase.from("live_presentations").update({ blackboard_strokes: [], blackboard_lines: [], blackboard_labels: [] }).eq("id", liveState.id);
+  }
+
+  async function sendBlackboardLine() {
+    if (!bbInput.trim() || !liveState?.id) return; const newLine = bbInput.trim(); setBbInput("");
+    setLiveState(prev => { if (!prev) return prev; const updatedLines = [...(prev.blackboardLines || []), newLine]; const updatedPres = { ...prev, blackboardLines: updatedLines }; updatePresentation(updatedPres); supabase.from("live_presentations").update({ blackboard_lines: updatedLines }).eq("id", prev.id).then(() => {}); return updatedPres; });
+  }
+
+  async function handleCanvasClick(e: React.MouseEvent) {
+    if (activeTool !== "label" || !bbInput.trim() || !liveState?.id) return;
+    const rect = e.currentTarget.getBoundingClientRect(); const x = ((e.clientX - rect.left) / rect.width) * 100; const y = ((e.clientY - rect.top) / rect.height) * 100; const newLabel = { text: bbInput.trim(), x, y }; setBbInput(""); setActiveTool("pen");
+    setLiveState(prev => { if (!prev) return prev; const updatedLabels = [...(prev.blackboardLabels || []), newLabel]; const updatedPres = { ...prev, blackboardLabels: updatedLabels }; updatePresentation(updatedPres); supabase.from("live_presentations").update({ blackboard_labels: updatedLabels }).eq("id", prev.id).then(() => {}); return updatedPres; });
+  }
+
+  function selectTool(tool: ToolType | "label") { setActiveTool(tool); }
+
+  async function changePage(delta: number) {
+    if (!liveState?.id || !courseId || materials.length === 0) return; const currentMatId = liveState.materialId; const currentIndex = materials.findIndex(m => m.id === currentMatId); const safeIndex = currentIndex === -1 ? 0 : currentIndex; let nextIndex = safeIndex + delta; if (nextIndex < 0) nextIndex = 0; if (nextIndex >= materials.length) nextIndex = materials.length - 1; if (nextIndex === safeIndex && delta !== 0) return; const nextMat = materials[nextIndex]; if (!nextMat) return;
+    const updatedPres = { ...liveState, materialId: nextMat.id, currentPage: 1, isBlackboard: false, updatedAt: new Date().toISOString() };
+    setLiveState(updatedPres); setPresentation(nextMat); setIsBlackboardMode(false);
+    await updatePresentation(updatedPres);
+    await supabase.from("live_presentations").update({ material_id: nextMat.id, current_page: 1, updated_at: new Date().toISOString() }).eq("id", liveState.id);
+  }
+
+  // Grant a specific classroom capability ("audio" | "video") to a learner.
+  async function grantPermission(userId: string, kind: "audio" | "video") {
+    if (!courseId || !tenantId) return;
+    try {
+      const { data: existing } = await supabase.from("allowed_speakers").select("can_audio, can_video").eq("user_id", userId).eq("course_id", courseId).maybeSingle();
+      const can_audio = kind === "audio" ? true : ((existing?.can_audio as boolean) ?? false);
+      const can_video = kind === "video" ? true : ((existing?.can_video as boolean) ?? false);
+      await supabase.from("allowed_speakers").upsert({ user_id: userId, course_id: courseId, tenant_id: tenantId, allowed: can_audio, can_audio, can_video }, { onConflict: "user_id" });
+      await supabase.from("raised_hands").delete().eq("user_id", userId).eq("course_id", courseId);
+    } catch (error) { console.warn("Could not grant permission:", error); }
+  }
+
+  // Revoke a specific capability — force-stops the learner's track remotely.
+  async function revokePermission(userId: string, kind: "audio" | "video") {
+    if (!courseId || !daily) return;
+    try {
+      if (daily.participants()[userId]) {
+        if (kind === "audio") await daily.updateParticipant(userId, { setAudio: false });
+        if (kind === "video") await daily.updateParticipant(userId, { setVideo: false });
+      }
+      const { data: existing } = await supabase.from("allowed_speakers").select("can_audio, can_video").eq("user_id", userId).eq("course_id", courseId).maybeSingle();
+      const can_audio = kind === "audio" ? false : ((existing?.can_audio as boolean) ?? false);
+      const can_video = kind === "video" ? false : ((existing?.can_video as boolean) ?? false);
+      if (!can_audio && !can_video) await supabase.from("allowed_speakers").delete().eq("user_id", userId).eq("course_id", courseId);
+      else await supabase.from("allowed_speakers").update({ can_audio, can_video, allowed: can_audio }).eq("user_id", userId).eq("course_id", courseId);
+    } catch (error) {}
+  }
+
+  async function startSession() {
+    if (!courseId || !tenantId) return;
+    await startLiveSession(courseId, currentUser.id);
+    const { data: existing } = await supabase.from("live_session").select("id").eq("course_id", courseId).maybeSingle();
+    if (existing) { await supabase.from("live_session").update({ active: true, updated_at: new Date().toISOString() }).eq("id", existing.id); } 
+    else { await supabase.from("live_session").insert({ id: crypto.randomUUID(), tenant_id: tenantId, course_id: courseId, trainer_id: currentUser.id, active: true, started_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_at: new Date().toISOString() }); }
+    setSessionActive(true);
+
+    if (materials.length > 0 && !presentation) {
+      const firstMat = materials[0]; setPresentation(firstMat); setIsBlackboardMode(false);
+      await startPresentation(courseId, firstMat.id, currentUser.id);
+      await supabase.from("live_presentations").delete().eq("course_id", courseId);
+      await supabase.from("live_presentations").insert({ id: crypto.randomUUID(), tenant_id: tenantId, course_id: courseId, started_by: currentUser.id, material_id: firstMat.id, current_page: 1, is_blackboard: false, blackboard_strokes: [], blackboard_lines: [], blackboard_labels: [], updated_at: new Date().toISOString() });
+    }
+    // Trainer activates classroom mic/cam from the floating bar in the classroom area.
+    // Learners join muted/camera-off and must be granted mic/cam via Raised Hands / Attending Now.
+  }
+
+  async function stopSession() {
+    if (!courseId) return;
+    await endLiveSession(courseId);
+    await clearPresentation(courseId);
+    await supabase.from("live_session").update({ active: false, updated_at: new Date().toISOString() }).eq("course_id", courseId);
+    await supabase.from("live_presentations").delete().eq("course_id", courseId);
+    // End of session revokes all classroom mic/cam permissions and clears raised hands
+    await supabase.from("allowed_speakers").delete().eq("course_id", courseId);
+    await supabase.from("raised_hands").delete().eq("course_id", courseId);
+    if (daily && isVoiceJoined) { daily.leave(); setIsVoiceJoined(false); setIsMicOn(false); setIsCamOn(false); setVideoTrack(null); } navigate("/trainer");
+  }
+
+  async function selectPage(materialId: string) {
+    if (!courseId || !tenantId) return; setActiveTool("pen"); const selectedMat = materials.find(m => m.id === materialId); if (selectedMat) { setPresentation(selectedMat); setIsBlackboardMode(false); }
+    if (liveState?.id) {
+      const updatedPres = { ...liveState, materialId, isBlackboard: false, currentPage: 1, updatedAt: new Date().toISOString() };
+      setLiveState(updatedPres);
+      await updatePresentation(updatedPres);
+      await supabase.from("live_presentations").update({ material_id: materialId, is_blackboard: false, current_page: 1, updated_at: new Date().toISOString() }).eq("id", liveState.id);
+    } else {
+      await startPresentation(courseId, materialId, currentUser.id);
+      await supabase.from("live_presentations").delete().eq("course_id", courseId);
+      await supabase.from("live_presentations").insert({ id: crypto.randomUUID(), tenant_id: tenantId, course_id: courseId, started_by: currentUser.id, material_id: materialId, current_page: 1, is_blackboard: false, blackboard_strokes: [], blackboard_lines: [], blackboard_labels: [], updated_at: new Date().toISOString() });
+    }
+  }
+
+  function handleLogout() {
+    if (sessionActive && courseId) { supabase.from("live_session").update({ active: false }).eq("course_id", courseId); supabase.from("live_presentations").delete().eq("course_id", courseId); supabase.from("allowed_speakers").delete().eq("course_id", courseId); supabase.from("raised_hands").delete().eq("course_id", courseId); if (daily && isVoiceJoined) daily.leave(); }
+    localStorage.removeItem("currentUser"); localStorage.removeItem("authToken"); localStorage.removeItem("adminDeviceId"); window.dispatchEvent(new Event("authStateChanged")); navigate("/login");
+  }
+
+  const iosBtnStyle: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", border: "none", borderRadius: "10px", flex: 1, cursor: "pointer", transition: "transform 0.1s ease, opacity 0.2s ease", boxShadow: "0 1px 2px rgba(0,0,0,0.05)", WebkitTapHighlightColor: "transparent" };
+  const toolBtnStyle = (isActive: boolean): React.CSSProperties => ({ width: "44px", height: "44px", borderRadius: "12px", border: "none", background: isActive ? "rgba(0, 165, 244, 0.2)" : "transparent", color: isActive ? "#00A5F4" : "#8E8E93", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease", flexShrink: 0 });
+  const permBtnStyle = (): React.CSSProperties => ({ border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600", cursor: "pointer" });
+  // Floating classroom AV bar buttons
+  const avBtnStyle: React.CSSProperties = { width: "48px", height: "48px", borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform 0.1s ease", WebkitTapHighlightColor: "transparent" };
+  const drawingActiveTool = activeTool === "label" ? "pen" as ToolType : activeTool;
+
+  const videoTileContainerStyle: React.CSSProperties = isVideoExpanded ? {
+    position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", borderRadius: 0, overflow: "hidden", border: "none", zIndex: 1000, background: "#000"
+  } : {
+    position: "absolute", bottom: "32px", left: "32px", width: "200px", height: "130px", borderRadius: "16px", overflow: "hidden", border: "3px solid #FFFFFF", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000",
+  };
+
+  return (
+    <div style={{ height: "100vh", width: "100vw", display: "flex", flexDirection: "column", background: C.bg, overflow: "hidden" }}>
+      <style>{`@keyframes avspin { to { transform: rotate(360deg); } }`}</style>
+      <DailyAudio />
+
+      {/* App Bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "rgba(249, 249, 249, 0.8)", backdropFilter: "blur(20px)", borderBottom: `0.33px solid ${C.separator}`, flexShrink: 0, zIndex: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "200px" }}>
+          {settings?.logo && <img src={settings.logo} alt="Logo" style={{ width: "32px", height: "32px", borderRadius: "8px", objectFit: "cover" }} />}
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: C.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{settings?.businessName || "SmartPages"}</h1>
+            {settings?.phone && <a href={`tel:${settings.phone}`} style={{ fontSize: "12px", color: C.textTertiary, textDecoration: "none", whiteSpace: "nowrap" }}>{settings.phone}</a>}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: C.purpleBg, padding: "4px 12px 4px 4px", borderRadius: "20px" }}>
+            {trainer?.avatar_url ? (
+              <img src={trainer.avatar_url as string} alt="Trainer" style={{ width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover" }} />
+            ) : (
+              <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: C.card, color: C.purple, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: "700" }}>{(trainer?.username as string)?.charAt(0).toUpperCase()}</div>
+            )}
+            <span style={{ fontSize: "13px", fontWeight: "600", color: C.purple }}>{(trainer?.username as string) || "Trainer"}</span>
+          </div>
+          <button onClick={() => setIsLeftCollapsed(!isLeftCollapsed)} style={{ width: "36px", height: "36px", borderRadius: "9px", background: "rgba(118, 118, 128, 0.12)", border: "none", cursor: "pointer" }} title="Toggle Controls"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+          <button onClick={handleLogout} style={{ width: "36px", height: "36px", borderRadius: "9px", background: C.redBg, border: "none", cursor: "pointer", color: C.red }} title="Logout"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Left control panel */}
+        <div style={{ flex: isLeftCollapsed ? "0 0 0px" : "0 0 240px", minWidth: isLeftCollapsed ? "0" : "200px", overflow: "hidden", transition: "flex 0.3s ease", background: C.panelBg, display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "12px", margin: "12px", background: C.card, borderRadius: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button onClick={() => navigate("/trainer")} style={{ background: "none", border: "none", color: C.medBlue, cursor: "pointer", display: "flex", alignItems: "center", padding: 0, gap: "4px", fontSize: "14px", fontWeight: "600" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>Exit</button>
+              {sessionActive ? <button onClick={stopSession} style={{ padding: "6px 12px", background: C.redBg, color: C.red, border: "none", borderRadius: "8px", fontWeight: "600", cursor: "pointer", fontSize: "12px" }}>End</button> : <button onClick={startSession} disabled={isConnecting} style={{ padding: "6px 12px", background: C.medBlue, color: "#fff", border: "none", borderRadius: "8px", fontWeight: "600", cursor: "pointer", fontSize: "12px", opacity: isConnecting ? 0.6 : 1 }}>Start</button>}
+            </div>
+            {presentation && !isBlackboardMode && (<div style={{ display: "flex", background: C.bg, borderRadius: "10px", padding: "4px" }}><button onClick={() => changePage(-1)} style={{ flex: 1, padding: "8px", border: "none", background: "transparent", cursor: "pointer", color: C.medBlue, fontWeight: "600", borderRadius: "8px" }}>‹ Prev</button><button onClick={() => changePage(1)} style={{ flex: 1, padding: "8px", border: "none", background: "transparent", cursor: "pointer", color: C.medBlue, fontWeight: "600", borderRadius: "8px" }}>Next ›</button></div>)}
+            
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button onClick={toggleBlackboard} style={{ ...iosBtnStyle, background: isBlackboardMode ? C.purple : C.iosBtnBg, color: isBlackboardMode ? "#FFFFFF" : C.textPrimary, width: "100%" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 8 }}><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="20" x2="18" y2="20"/></svg>
+                Toggle Blackboard
+              </button>
+            </div>
+
+            {/* Raised Hands — trainer grants classroom mic / cam activation per learner */}
+            <div style={{ marginTop: "12px", borderTop: `1px solid ${C.separator}`, paddingTop: "12px" }}>
+              <div style={{ fontSize: "13px", color: C.textTertiary, fontWeight: "600", margin: "0 0 8px 0" }}>✋ Raised Hands ({raisedHands.length})</div>
+              {raisedHands.length === 0 ? <p style={{ fontSize: "12px", color: C.textTertiary }}>No hands raised.</p> : <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>{raisedHands.map((hand) => (
+                <div key={hand.user_id as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px", background: C.orangeBg, borderRadius: "8px" }}>
+                  <span style={{ fontSize: "13px", fontWeight: "600" }}>{hand.username || "Unknown"}</span>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button onClick={() => grantPermission(hand.user_id as string, "audio")} style={{ background: C.green, color: "#fff", border: "none", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>🎤 Mic</button>
+                    <button onClick={() => grantPermission(hand.user_id as string, "video")} style={{ background: C.medBlue, color: "#fff", border: "none", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>📹 Cam</button>
+                  </div>
+                </div>
+              ))}</div>}
+            </div>
+          </div>
+
+          <div style={{ padding: "0 12px 12px 12px" }}>
+            <p style={{ fontSize: "13px", color: C.textTertiary, textTransform: "uppercase", fontWeight: "600", letterSpacing: "0.5px", margin: "0 0 8px 0" }}>Attending Now ({activeLearners.length})</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "20px" }}>
+              {activeLearners.length === 0 && <p style={{ fontSize: "12px", color: C.textTertiary }}>No learners active.</p>}
+              {activeLearners.map(learner => {
+                const perms = speakerPerms[learner.id];
+                return (
+                  <div key={learner.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px", background: C.card, borderRadius: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: C.greenBg, color: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "600", flexShrink: 0 }}>{learner.username?.charAt(0).toUpperCase()}</div>
+                      <span style={{ fontSize: "12px", fontWeight: "500", color: C.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{learner.username}</span>
+                      {perms?.can_audio && <span title="Mic allowed" style={{ fontSize: 11 }}>🎤</span>}
+                      {perms?.can_video && <span title="Camera allowed" style={{ fontSize: 11 }}>📹</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                      {!perms?.can_audio && <button onClick={() => grantPermission(learner.id, "audio")} style={{ ...permBtnStyle(), background: C.greenBg, color: C.green }} title="Allow mic">🎤</button>}
+                      {!perms?.can_video && <button onClick={() => grantPermission(learner.id, "video")} style={{ ...permBtnStyle(), background: C.medBlueBg, color: C.medBlue }} title="Allow camera">📹</button>}
+                      {perms?.can_audio && <button onClick={() => revokePermission(learner.id, "audio")} style={{ ...permBtnStyle(), background: C.redBg, color: C.red }}>Mute</button>}
+                      {perms?.can_video && <button onClick={() => revokePermission(learner.id, "video")} style={{ ...permBtnStyle(), background: C.redBg, color: C.red }}>Cam off</button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p style={{ fontSize: "13px", color: C.textTertiary, fontWeight: "600", margin: "0 0 8px 0" }}>Lesson Pages</p>
+            {materials.map((mat) => { const meta = getFileMeta(mat.fileType); const isActive = liveState?.materialId === mat.id && !isBlackboardMode; return (<div key={mat.id} onClick={() => selectPage(mat.id)} style={{ display: "flex", alignItems: "center", padding: "12px", gap: "10px", cursor: "pointer", background: isActive ? C.medBlueBg : C.card, borderRadius: "10px", marginBottom: "6px" }}><div style={{ width: "32px", height: "32px", borderRadius: "8px", background: meta.bg, color: meta.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>{meta.icon}</div><div style={{ fontSize: "14px", color: isActive ? C.medBlue : C.textPrimary, fontWeight: isActive ? "600" : "500" }}>{mat.title}</div></div>); })}
+          </div>
+        </div>
+
+        {/* Classroom main area */}
+        <div style={{ flex: "1 1 auto", minWidth: 0, background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+          <div style={{ flex: 1, display: "flex", width: "200%", height: "100%", transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)", transform: isBlackboardMode ? "translateX(-50%)" : "translateX(0%)" }}>
+            <div style={{ width: "50%", height: "100%", flexShrink: 0, display: "flex", flexDirection: "column", background: C.card, overflow: "hidden", position: "relative" }}>
+              {presentation ? <LiveClassView material={presentation} page={liveState?.currentPage ?? 1} /> : <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><p style={{ color: C.textTertiary, fontSize: "15px" }}>{materials.length > 0 ? "Select a page from the sidebar." : "Upload pages first."}</p></div>}
+            </div>
+            <div style={{ width: "50%", height: "100%", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: "#1A1A1A" }}>
+              <div style={{ flex: 1, position: "relative", overflow: "hidden", cursor: activeTool === "label" ? "crosshair" : undefined }} onClick={activeTool === "label" ? handleCanvasClick : undefined}>
+                <DrawingBlackboard isTrainer={true} strokes={liveState?.blackboardStrokes || []} onStrokeEnd={handleStrokeEnd} onErase={handleErase} activeTool={drawingActiveTool} penColor={penColor} penWidth={penWidth} eraserSize={eraserSize} fontFamily={fontOptions.fontFamily} fontSize={fontOptions.fontSize} fontColor={fontOptions.fontColor} fontWeight={fontOptions.fontWeight} fontStyle={fontOptions.fontStyle} courseId={courseId!} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#111", padding: "8px 12px", overflowX: "auto" }}>
+                <button onClick={() => selectTool("pen")} title="Pen" style={toolBtnStyle(activeTool === "pen")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg></button>
+                <button onClick={() => selectTool("eraser")} title="Eraser" style={toolBtnStyle(activeTool === "eraser")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 20H7L3 16C2.5 15.5 2.5 14.5 3 14L13 4L20 11L11 20"/></svg></button>
+                {activeTool === "pen" && <label style={{ ...toolBtnStyle(false), width: "auto", padding: "0 8px", gap: "6px" }}><input type="color" value={penColor} onChange={e => setPenColor(e.target.value)} style={{ width: "22px", height: "22px", border: "none", background: "none", cursor: "pointer", padding: 0 }} /></label>}
+                {activeTool === "pen" && <input type="range" min="1" max="20" value={penWidth} onChange={e => setPenWidth(Number(e.target.value))} style={{ width: "60px", accentColor: "#00A5F4" }} />}
+                {activeTool === "eraser" && <input type="range" min="10" max="100" value={eraserSize} onChange={e => setEraserSize(Number(e.target.value))} style={{ width: "80px", accentColor: "#00A5F4" }} />}
+                <input type="text" placeholder={activeTool === "label" ? "Click board to pin..." : "Type to write..."} value={bbInput} onChange={(e) => setBbInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && activeTool !== "label") sendBlackboardLine(); }} style={{ flex: 1, minWidth: "100px", background: "transparent", border: "none", outline: "none", color: "#FFF", fontSize: "15px" }} />
+                <button onClick={() => bbInput.trim() && selectTool("label")} title="Pin Label" style={toolBtnStyle(activeTool === "label")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg></button>
+                <button onClick={sendBlackboardLine} style={{ width: "36px", height: "36px", borderRadius: "50%", border: "none", background: bbInput.trim() && activeTool !== "label" ? "#00A5F4" : "rgba(255,255,255,0.1)", color: bbInput.trim() && activeTool !== "label" ? "#fff" : "#666", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+                <button onClick={clearBlackboard} title="Clear Board" style={{ width: "44px", height: "44px", borderRadius: "12px", border: "none", background: "transparent", color: "#FF3B30", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          {/* Floating CLASSROOM AV bar — trainer's own mic/cam (not chat) */}
+          <div style={{ position: "absolute", bottom: "24px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "16px", padding: "10px", background: "rgba(28, 28, 30, 0.8)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.1)", zIndex: 20 }}>
+            <button onClick={() => navigate("/trainer")} style={{ ...avBtnStyle, background: "#E5E5EA", color: "#1C1C1E" }} title="Exit classroom">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <button onClick={toggleMic} style={{ ...avBtnStyle, background: isMicOn ? C.green : "#E5E5EA", color: isMicOn ? "#fff" : "#1C1C1E", opacity: isConnecting ? 0.6 : 1 }} title={isMicOn ? "Classroom mic on" : "Classroom mic off"}>
+              {isConnecting ? (
+                <span style={{ width: 18, height: 18, border: "2.5px solid rgba(0,0,0,0.2)", borderTopColor: "#1C1C1E", borderRadius: "50%", display: "inline-block", animation: "avspin 0.8s linear infinite" }} />
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0" fill="none" stroke="currentColor" strokeWidth="2"/><line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" strokeWidth="2"/></svg>
+              )}
+            </button>
+            <button onClick={toggleCam} style={{ ...avBtnStyle, background: isCamOn ? C.medBlue : "#E5E5EA", color: isCamOn ? "#fff" : "#1C1C1E", opacity: isConnecting ? 0.6 : 1 }} title={isCamOn ? "Classroom camera on" : "Classroom camera off"}>
+              {isCamOn ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2"/><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
+              )}
+            </button>
+          </div>
+
+          {/* Trainer self-view — only while classroom camera is on */}
+          {isCamOn && videoTrack && (
+            <div style={videoTileContainerStyle}>
+              <video autoPlay muted playsInline ref={(el) => { if (el && videoTrack) { const stream = new MediaStream([videoTrack]); if (el.srcObject !== stream) el.srcObject = stream; } }} style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />
+              <button onClick={() => setIsVideoExpanded(!isVideoExpanded)} style={{ position: "absolute", top: "8px", right: "8px", background: "rgba(0,0,0,0.5)", border: "none", color: "#fff", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
+                {isVideoExpanded ? "Collapse" : "Expand"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Chat Sidebar — TEXT + FILES ONLY. No audio/video controls here. */}
+        <div style={{ width: isChatOpen ? "360px" : "64px", minWidth: 0, transition: "width 0.3s ease", flexShrink: 0, borderLeft: "1px solid #E5E5EA", background: "#1C1C1E" }}>
+          <ClassChat 
+            courseId={courseId || ""} 
+            isChatOpen={isChatOpen}
+            toggleChatOpen={() => setIsChatOpen(!isChatOpen)}
+          />
+        </div>
+      </div>
+
+      {/* Media help modal (Windows privacy toggle / device busy / missing) */}
+      <MediaHelpModal problem={mediaProblem} onClose={() => setMediaProblem(null)} />
+    </div>
+  );
+}

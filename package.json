@@ -1,0 +1,9 @@
+{
+  "name": "smartpages-web",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:blog && npm run build:app",
+    "build:blog": "cd blog && npm run build -- --outDir=../dist --emptyOutDir",
+    "build:app": "cd app && npm run build -- --base=/app/ --outDir=../dist/app --emptyOutDir"
+  }
+}
