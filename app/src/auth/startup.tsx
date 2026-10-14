@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Navigate, useLocation, Link } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { loginUser, addUser } from "../database/userDB";
 import { loginTenant } from "../api/authApi";
 import {
@@ -20,10 +20,6 @@ const MEDICAL_BLUE = "#007AFF";
 const iosFont =
   "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
 
-const DEFAULT_SITE_NAME = "Medstat Initiative";
-const DEFAULT_TAGLINE = "Building resilient healthy communities";
-const DEFAULT_LOGO = "/loadlogo.png";
-
 type AppScreen =
   | "main"
   | "login"
@@ -31,40 +27,30 @@ type AppScreen =
   | "admin_otp"
   | "admin_register";
 
-type SiteSettings = {
-  logoUrl: string;
-  siteName: string;
-  tagline: string;
-};
-
-/* ── Edit these to match your real routes ── */
+/* ── Nav routes — full page navigation to the blog (app is mounted at /app/) ── */
 const NAV_LINKS = [
-  { label: "Home", to: "/" },
-  { label: "Blog", to: "/articles" },
-  { label: "E-Learning", to: "/e-learning" },
-  { label: "About", to: "/about" },
+  { label: "Home", href: "/" },
+  { label: "Blog", href: "/articles" },
+  { label: "E-Learning", href: "/app/" },
+  { label: "About", href: "/about" },
 ];
 
-/* ── Medstat-style app bar + shell (self-contained) ── */
+/* ── Medstat-style app bar + shell — branding comes only from Supabase ── */
 function StartupShell({
   children,
   brandName,
   tagline,
   logo,
   version,
-  showCta,
-  onCta,
+  showSubscribe,
 }: {
   children: React.ReactNode;
   brandName?: string;
   tagline?: string;
   logo?: string;
   version?: string;
-  showCta?: boolean;
-  onCta?: () => void;
+  showSubscribe?: boolean;
 }) {
-  const location = useLocation();
-
   return (
     <div
       style={{
@@ -107,6 +93,20 @@ function StartupShell({
           width: 44px;
           height: 44px;
           object-fit: contain;
+          flex-shrink: 0;
+        }
+        .msb-logo-fallback {
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          background: #1e3a8a;
+          color: #ffffff;
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 20px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           flex-shrink: 0;
         }
         .msb-brand-text {
@@ -172,6 +172,8 @@ function StartupShell({
           color: #9ca3af;
         }
         .msb-cta {
+          display: inline-flex;
+          align-items: center;
           height: 44px;
           padding: 0 26px;
           border: none;
@@ -180,6 +182,7 @@ function StartupShell({
           color: #ffffff;
           font-size: 15px;
           font-weight: 700;
+          text-decoration: none;
           cursor: pointer;
           transition: background 0.15s ease;
         }
@@ -195,47 +198,60 @@ function StartupShell({
 
       <header className="msb-bar">
         <div className="msb-inner">
-          <Link to="/" className="msb-brand">
-            <img
-              src={logo}
-              alt={brandName}
-              className="msb-logo"
-              onError={(e) => {
-                if (e.currentTarget.src !== window.location.origin + DEFAULT_LOGO) {
-                  e.currentTarget.src = DEFAULT_LOGO;
-                }
-              }}
-            />
-            <span className="msb-brand-text">
-              <span className="msb-name">{brandName}</span>
-              <span className="msb-tagline">{tagline}</span>
-            </span>
-          </Link>
+          <a href="/" className="msb-brand">
+            {logo ? (
+              <img
+                src={logo}
+                alt={brandName || ""}
+                className="msb-logo"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            ) : brandName ? (
+              <div className="msb-logo-fallback">
+                {brandName.charAt(0).toUpperCase()}
+              </div>
+            ) : null}
+
+            {(brandName || tagline) && (
+              <span className="msb-brand-text">
+                {brandName && (
+                  <span className="msb-name">{brandName}</span>
+                )}
+                {tagline && (
+                  <span className="msb-tagline">{tagline}</span>
+                )}
+              </span>
+            )}
+          </a>
 
           <div className="msb-right">
             <nav className="msb-links">
-              {NAV_LINKS.map((l) => (
-                <Link
-                  key={l.label}
-                  to={l.to}
-                  className={
-                    "msb-link" +
-                    (location.pathname === l.to ? " active" : "")
-                  }
-                >
-                  {l.label}
-                </Link>
-              ))}
+              {NAV_LINKS.map((l) => {
+                /* The app itself IS e-learning — always active here */
+                const isActive = l.label === "E-Learning";
+
+                return (
+                  <a
+                    key={l.label}
+                    href={l.href}
+                    className={"msb-link" + (isActive ? " active" : "")}
+                  >
+                    {l.label}
+                  </a>
+                );
+              })}
             </nav>
 
             {version && (
               <span className="msb-version">v{version}</span>
             )}
 
-            {showCta && (
-              <button className="msb-cta" onClick={onCta}>
+            {showSubscribe && (
+              <a href="/subscribe" className="msb-cta">
                 Subscribe
-              </button>
+              </a>
             )}
           </div>
         </div>
@@ -322,7 +338,9 @@ const AuthLayout = ({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: "url(/loadlogo.png)",
+          backgroundImage: logo
+            ? `url(${logo})`
+            : "url(/loadlogo.png)",
           backgroundRepeat: "repeat",
           backgroundSize: "120px 120px",
           opacity: 0.08,
@@ -429,8 +447,10 @@ export default function Startup() {
   const [screen, setScreen] =
     useState<AppScreen>("main");
 
-  const [siteSettings, setSiteSettings] =
-    useState<SiteSettings | null>(null);
+  /* ── All empty until fetched from Supabase ── */
+  const [siteLogo, setSiteLogo] = useState("");
+  const [siteName, setSiteName] = useState("");
+  const [siteTagline, setSiteTagline] = useState("");
 
   const [branding, setBranding] = useState<{
     businessName: string;
@@ -459,52 +479,60 @@ export default function Startup() {
 
   const [requiresUnlock, setRequiresUnlock] = useState(false);
 
+  /* ── Fetch from Supabase only: site_settings first, supadmin_settings fallback ── */
+  async function fetchSiteSettings() {
+    var logo: string | null = null;
+    var name: string | null = null;
+    var tag: string | null = null;
+
+    // Try site_settings
+    try {
+      const r1 = await supabase
+        .from("site_settings")
+        .select("*")
+        .eq("id", "main")
+        .maybeSingle();
+
+      if (!r1.error && r1.data) {
+        const d: any = r1.data;
+        logo = d.logo_url || null;
+        name = d.site_name || null;
+        tag = d.tagline || null;
+      }
+    } catch {
+      // Skipped.
+    }
+
+    // Try supadmin_settings — fills in anything site_settings didn't provide
+    try {
+      const r2 = await supabase
+        .from("supadmin_settings")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+
+      if (!r2.error && r2.data) {
+        const d2: any = r2.data;
+        if (!logo && d2.logo_url) logo = d2.logo_url;
+        if (!name && d2.business_name) name = d2.business_name;
+        if (!tag && d2.tagline) tag = d2.tagline;
+      }
+    } catch {
+      // Skipped.
+    }
+
+    // Apply only what Supabase returned
+    if (logo) setSiteLogo(logo);
+    if (name) setSiteName(name);
+    if (tag) setSiteTagline(tag);
+  }
+
   useEffect(() => {
     getVersion()
       .then((v) => setAppVersion(v))
       .catch(() => {});
 
-    /* ── Site settings (logo, name, tagline) from public.site_settings ── */
-    const cachedSettings =
-      localStorage.getItem("siteSettings");
-
-    if (cachedSettings) {
-      try {
-        setSiteSettings(JSON.parse(cachedSettings));
-      } catch {
-        localStorage.removeItem("siteSettings");
-      }
-    }
-
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from("site_settings")
-          .select("logo_url, site_name, tagline")
-          .eq("id", "main")
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (data) {
-          const s: SiteSettings = {
-            logoUrl: data.logo_url || "",
-            siteName:
-              data.site_name || DEFAULT_SITE_NAME,
-            tagline: data.tagline || DEFAULT_TAGLINE,
-          };
-
-          setSiteSettings(s);
-
-          localStorage.setItem(
-            "siteSettings",
-            JSON.stringify(s)
-          );
-        }
-      } catch {
-        // Offline — cached settings (or defaults) shown.
-      }
-    })();
+    fetchSiteSettings();
 
     const storedUser =
       localStorage.getItem("currentUser");
@@ -926,26 +954,17 @@ export default function Startup() {
     transition: "background 0.2s",
   };
 
-  /* ── Navbar uses global site_settings ── */
-  const navBrand =
-    siteSettings?.siteName || DEFAULT_SITE_NAME;
-  const navTagline =
-    siteSettings?.tagline || DEFAULT_TAGLINE;
-  const navLogo =
-    siteSettings?.logoUrl || DEFAULT_LOGO;
-
-  /* ── Auth card: institution logo first, then site logo ── */
+  /* ── Auth card: institution logo first, then fetched site logo ── */
   const cardLogo =
-    branding?.logo || navLogo;
+    branding?.logo || siteLogo || undefined;
 
   if (screen === "admin_sms") {
     return (
       <StartupShell
-        brandName={navBrand}
-        tagline={navTagline}
-        logo={navLogo}
+        brandName={siteName || undefined}
+        tagline={siteTagline || undefined}
+        logo={siteLogo || undefined}
         version={appVersion}
-        showCta={false}
       >
         <PhoneEntry
           onSent={handleSmsSent}
@@ -958,11 +977,10 @@ export default function Startup() {
   if (screen === "admin_otp") {
     return (
       <StartupShell
-        brandName={navBrand}
-        tagline={navTagline}
-        logo={navLogo}
+        brandName={siteName || undefined}
+        tagline={siteTagline || undefined}
+        logo={siteLogo || undefined}
         version={appVersion}
-        showCta={false}
       >
         <VerifyCode
           phone={phoneNumber}
@@ -976,11 +994,10 @@ export default function Startup() {
   if (screen === "admin_register") {
     return (
       <StartupShell
-        brandName={navBrand}
-        tagline={navTagline}
-        logo={navLogo}
+        brandName={siteName || undefined}
+        tagline={siteTagline || undefined}
+        logo={siteLogo || undefined}
         version={appVersion}
-        showCta={false}
       >
         <RegisterAdmin
           phone={phoneNumber}
@@ -995,11 +1012,10 @@ export default function Startup() {
   if (requiresUnlock) {
     return (
       <StartupShell
-        brandName={navBrand}
-        tagline={navTagline}
-        logo={navLogo}
+        brandName={siteName || undefined}
+        tagline={siteTagline || undefined}
+        logo={siteLogo || undefined}
         version={appVersion}
-        showCta={false}
       >
         <AuthLayout
           background={branding?.loginBackground}
@@ -1091,11 +1107,10 @@ export default function Startup() {
   if (screen === "login") {
     return (
       <StartupShell
-        brandName={navBrand}
-        tagline={navTagline}
-        logo={navLogo}
+        brandName={siteName || undefined}
+        tagline={siteTagline || undefined}
+        logo={siteLogo || undefined}
         version={appVersion}
-        showCta={false}
       >
         <AuthLayout
           background={branding?.loginBackground}
@@ -1186,12 +1201,11 @@ export default function Startup() {
 
   return (
     <StartupShell
-      brandName={navBrand}
-      tagline={navTagline}
-      logo={navLogo}
+      brandName={siteName || undefined}
+      tagline={siteTagline || undefined}
+      logo={siteLogo || undefined}
       version={appVersion}
-      showCta
-      onCta={handleStartAdminRegister}
+      showSubscribe
     >
       <div
         style={{
