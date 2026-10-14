@@ -11,6 +11,7 @@ import {
 } from "../database/sync";
 import { supabase } from "../auth/supabase";
 import LoadingButton from "../components/LoadingButton";
+import AppNavbar from "../components/AppNavbar";
 import PhoneEntry from "./PhoneEntry";
 import VerifyCode from "./VerifyCode";
 import RegisterAdmin from "./RegisterAdmin";
@@ -27,11 +28,58 @@ type AppScreen =
   | "admin_otp"
   | "admin_register";
 
+/* ── Shared shell: app bar on top, screen content below ── */
+function StartupShell({
+  children,
+  brandName,
+  logo,
+  version,
+  showCta,
+  onCta,
+}: {
+  children: React.ReactNode;
+  brandName?: string;
+  logo?: string;
+  version?: string;
+  showCta?: boolean;
+  onCta?: () => void;
+}) {
+  return (
+    <div
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#F2F2F7",
+        fontFamily: iosFont,
+      }}
+    >
+      <AppNavbar
+        brandName={brandName}
+        logo={logo}
+        version={version}
+        showCta={showCta}
+        ctaLabel="Register Institution"
+        onCta={onCta}
+      />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          position: "relative",
+          overflowY: "auto",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 const AuthLayout = ({
   children,
   background,
   logo,
-  version,
   showBack,
   onBack,
   watermark,
@@ -39,7 +87,6 @@ const AuthLayout = ({
   children: React.ReactNode;
   background?: string;
   logo?: string;
-  version?: string;
   showBack?: boolean;
   onBack?: () => void;
   watermark?: boolean;
@@ -47,7 +94,7 @@ const AuthLayout = ({
   <div
     style={{
       width: "100%",
-      height: "100vh",
+      height: "100%",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -193,27 +240,6 @@ const AuthLayout = ({
 
       {children}
     </div>
-
-    {version && (
-      <div
-        style={{
-          position: "absolute",
-          bottom: 20,
-          width: "100%",
-          textAlign: "center",
-          color:
-            watermark || !background
-              ? "#8E8E93"
-              : "rgba(255,255,255,0.8)",
-          fontSize: 12,
-          fontFamily: iosFont,
-          zIndex: 10,
-          pointerEvents: "none",
-        }}
-      >
-        Version {version}
-      </div>
-    )}
   </div>
 );
 
@@ -678,363 +704,406 @@ export default function Startup() {
     transition: "background 0.2s",
   };
 
+  const navBrand =
+    branding?.businessName || "MedTrain";
+  const navLogo =
+    branding?.logo || "/loadlogo.png";
+
   if (screen === "admin_sms") {
     return (
-      <PhoneEntry
-        onSent={handleSmsSent}
-        onBack={() => setScreen("main")}
-      />
+      <StartupShell
+        brandName={navBrand}
+        logo={navLogo}
+        version={appVersion}
+        showCta={false}
+      >
+        <PhoneEntry
+          onSent={handleSmsSent}
+          onBack={() => setScreen("main")}
+        />
+      </StartupShell>
     );
   }
 
   if (screen === "admin_otp") {
     return (
-      <VerifyCode
-        phone={phoneNumber}
-        onVerified={handleOtpVerified}
-        onBack={() => setScreen("admin_sms")}
-      />
+      <StartupShell
+        brandName={navBrand}
+        logo={navLogo}
+        version={appVersion}
+        showCta={false}
+      >
+        <VerifyCode
+          phone={phoneNumber}
+          onVerified={handleOtpVerified}
+          onBack={() => setScreen("admin_sms")}
+        />
+      </StartupShell>
     );
   }
 
   if (screen === "admin_register") {
     return (
-      <RegisterAdmin
-        phone={phoneNumber}
-        tempToken={tempToken || ""}
-        onComplete={handleAdminCreated}
-        onBack={() => setScreen("admin_otp")}
-      />
+      <StartupShell
+        brandName={navBrand}
+        logo={navLogo}
+        version={appVersion}
+        showCta={false}
+      >
+        <RegisterAdmin
+          phone={phoneNumber}
+          tempToken={tempToken || ""}
+          onComplete={handleAdminCreated}
+          onBack={() => setScreen("admin_otp")}
+        />
+      </StartupShell>
     );
   }
 
   if (requiresUnlock) {
     return (
-      <AuthLayout
-        background={branding?.loginBackground}
-        logo={branding?.logo || "/loadlogo.png"}
+      <StartupShell
+        brandName={navBrand}
+        logo={navLogo}
         version={appVersion}
-        showBack
-        onBack={() => {
-          stopPeriodicPull();
-          localStorage.removeItem("currentUser");
-          localStorage.removeItem("authToken");
-          setRequiresUnlock(false);
-          setPassword("");
-          setUsername("");
-        }}
+        showCta={false}
       >
-        <h2
-          style={{
-            textAlign: "center",
-            fontSize: 24,
-            color: "#1C1C1E",
-            fontWeight: 700,
-            marginBottom: 8,
+        <AuthLayout
+          background={branding?.loginBackground}
+          logo={branding?.logo || "/loadlogo.png"}
+          showBack
+          onBack={() => {
+            stopPeriodicPull();
+            localStorage.removeItem("currentUser");
+            localStorage.removeItem("authToken");
+            setRequiresUnlock(false);
+            setPassword("");
+            setUsername("");
           }}
         >
-          Welcome back
-        </h2>
-
-        <p
-          style={{
-            textAlign: "center",
-            fontSize: 15,
-            color: "#8E8E93",
-            marginBottom: 24,
-          }}
-        >
-          Enter your password to continue.
-        </p>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleLogin();
-          }}
-          style={{ width: "100%" }}
-        >
-          <input
-            type="password"
-            placeholder="Enter Password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setMessage("");
-            }}
-            style={inputStyle}
-            autoFocus
-            autoComplete="current-password"
-          />
-
-          {message && (
-            <p
-              style={{
-                textAlign: "center",
-                color: "#FF3B30",
-                fontSize: 14,
-                marginBottom: 12,
-              }}
-            >
-              {message}
-            </p>
-          )}
-
-          <LoadingButton
-            type="submit"
-            loading={loading}
-            loadingLabel="Signing in…"
-            disabled={!password}
+          <h2
             style={{
-              height: 54,
-              padding: 0,
+              textAlign: "center",
+              fontSize: 24,
+              color: "#1C1C1E",
+              fontWeight: 700,
+              marginBottom: 8,
             }}
           >
-            Unlock
-          </LoadingButton>
-        </form>
-      </AuthLayout>
+            Welcome back
+          </h2>
+
+          <p
+            style={{
+              textAlign: "center",
+              fontSize: 15,
+              color: "#8E8E93",
+              marginBottom: 24,
+            }}
+          >
+            Enter your password to continue.
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLogin();
+            }}
+            style={{ width: "100%" }}
+          >
+            <input
+              type="password"
+              placeholder="Enter Password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setMessage("");
+              }}
+              style={inputStyle}
+              autoFocus
+              autoComplete="current-password"
+            />
+
+            {message && (
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "#FF3B30",
+                  fontSize: 14,
+                  marginBottom: 12,
+                }}
+              >
+                {message}
+              </p>
+            )}
+
+            <LoadingButton
+              type="submit"
+              loading={loading}
+              loadingLabel="Signing in…"
+              disabled={!password}
+              style={{
+                height: 54,
+                padding: 0,
+              }}
+            >
+              Unlock
+            </LoadingButton>
+          </form>
+        </AuthLayout>
+      </StartupShell>
     );
   }
 
   if (screen === "login") {
     return (
-      <AuthLayout
-        background={branding?.loginBackground}
-        logo={branding?.logo || "/loadlogo.png"}
+      <StartupShell
+        brandName={navBrand}
+        logo={navLogo}
         version={appVersion}
-        showBack
-        onBack={() => {
-          stopPeriodicPull();
-          setScreen("main");
-          setTenantId(null);
-          setMessage("");
-        }}
+        showCta={false}
       >
-        <h1
-          style={{
-            textAlign: "center",
-            fontSize: 24,
-            color: "#1C1C1E",
-            fontWeight: 700,
-            marginBottom: 24,
+        <AuthLayout
+          background={branding?.loginBackground}
+          logo={branding?.logo || "/loadlogo.png"}
+          showBack
+          onBack={() => {
+            stopPeriodicPull();
+            setScreen("main");
+            setTenantId(null);
+            setMessage("");
           }}
         >
-          Welcome Back
-        </h1>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleLogin();
-          }}
-          style={{ width: "100%" }}
-        >
-          <input
-            name="username"
-            placeholder="Username"
-            value={username}
-            onChange={(e) =>
-              setUsername(e.target.value)
-            }
-            style={inputStyle}
-            autoFocus
-            autoComplete="username"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) =>
-              setPassword(e.target.value)
-            }
-            style={inputStyle}
-            autoComplete="current-password"
-          />
-
-          {message && (
-            <p
-              style={{
-                textAlign: "center",
-                color: "#FF3B30",
-                fontSize: 14,
-                marginBottom: 12,
-              }}
-            >
-              {message}
-            </p>
-          )}
-
-          <LoadingButton
-            type="submit"
-            loading={loading}
-            loadingLabel="Signing in…"
+          <h1
             style={{
-              height: 54,
-              padding: 0,
+              textAlign: "center",
+              fontSize: 24,
+              color: "#1C1C1E",
+              fontWeight: 700,
+              marginBottom: 24,
             }}
           >
-            Login
-          </LoadingButton>
-        </form>
-      </AuthLayout>
+            Welcome Back
+          </h1>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLogin();
+            }}
+            style={{ width: "100%" }}
+          >
+            <input
+              name="username"
+              placeholder="Username"
+              value={username}
+              onChange={(e) =>
+                setUsername(e.target.value)
+              }
+              style={inputStyle}
+              autoFocus
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
+              style={inputStyle}
+              autoComplete="current-password"
+            />
+
+            {message && (
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "#FF3B30",
+                  fontSize: 14,
+                  marginBottom: 12,
+                }}
+              >
+                {message}
+              </p>
+            )}
+
+            <LoadingButton
+              type="submit"
+              loading={loading}
+              loadingLabel="Signing in…"
+              style={{
+                height: 54,
+                padding: 0,
+              }}
+            >
+              Login
+            </LoadingButton>
+          </form>
+        </AuthLayout>
+      </StartupShell>
     );
   }
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        height: "100vh",
-      }}
+    <StartupShell
+      brandName={navBrand}
+      logo={navLogo}
+      version={appVersion}
+      showCta
+      onCta={handleStartAdminRegister}
     >
-      <AuthLayout
-        watermark
-        logo="/loadlogo.png"
-        version={appVersion}
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+        }}
       >
-        <h1
-          style={{
-            textAlign: "center",
-            fontSize: 24,
-            color: "#1C1C1E",
-            fontWeight: 700,
-            marginBottom: 8,
-          }}
-        >
-          Welcome
-        </h1>
-
-        <p
-          style={{
-            textAlign: "center",
-            fontSize: 15,
-            color: "#8E8E93",
-            marginBottom: 24,
-          }}
-        >
-          Enter your institution to continue
-        </p>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleTrainerLookup();
-          }}
-          style={{ width: "100%" }}
-        >
-          <input
-            type="text"
-            placeholder="Enter Institution Name"
-            value={businessName}
-            onChange={(e) => {
-              setBusinessName(e.target.value);
-              setLookupError("");
-            }}
-            style={inputStyle}
-            autoFocus
-            autoComplete="organization"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-
-          {lookupError && (
-            <p
-              style={{
-                textAlign: "center",
-                color: "#FF3B30",
-                fontSize: 14,
-                marginBottom: 12,
-              }}
-            >
-              {lookupError}
-            </p>
-          )}
-
-          <LoadingButton
-            type="submit"
-            loading={lookupLoading}
-            loadingLabel="Finding…"
-            disabled={!businessName.trim()}
+        <AuthLayout watermark>
+          <h1
             style={{
-              height: 54,
-              padding: 0,
+              textAlign: "center",
+              fontSize: 24,
+              color: "#1C1C1E",
+              fontWeight: 700,
+              marginBottom: 8,
             }}
           >
-            Continue
-          </LoadingButton>
-        </form>
-      </AuthLayout>
+            Welcome
+          </h1>
 
-      {/* Register New Institution — page lower-right corner */}
-      <button
-        onClick={handleStartAdminRegister}
-        style={{
-          position: "fixed",
-          right: 28,
-          bottom: 28,
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          border: "none",
-          background: MEDICAL_BLUE,
-          boxShadow:
-            "0 6px 18px rgba(0,122,255,0.30)",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 100,
-          transition:
-            "transform 0.15s ease, box-shadow 0.15s ease",
-        }}
-        title="Register New Institution"
-        aria-label="Register New Institution"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform =
-            "scale(1.06)";
-          e.currentTarget.style.boxShadow =
-            "0 8px 22px rgba(0,122,255,0.38)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "scale(1)";
-          e.currentTarget.style.boxShadow =
-            "0 6px 18px rgba(0,122,255,0.30)";
-        }}
-      >
-        <svg
-          width="26"
-          height="26"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          <p
+            style={{
+              textAlign: "center",
+              fontSize: 15,
+              color: "#8E8E93",
+              marginBottom: 24,
+            }}
+          >
+            Enter your institution to continue
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleTrainerLookup();
+            }}
+            style={{ width: "100%" }}
+          >
+            <input
+              type="text"
+              placeholder="Enter Institution Name"
+              value={businessName}
+              onChange={(e) => {
+                setBusinessName(e.target.value);
+                setLookupError("");
+              }}
+              style={inputStyle}
+              autoFocus
+              autoComplete="organization"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+
+            {lookupError && (
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "#FF3B30",
+                  fontSize: 14,
+                  marginBottom: 12,
+                }}
+              >
+                {lookupError}
+              </p>
+            )}
+
+            <LoadingButton
+              type="submit"
+              loading={lookupLoading}
+              loadingLabel="Finding…"
+              disabled={!businessName.trim()}
+              style={{
+                height: 54,
+                padding: 0,
+              }}
+            >
+              Continue
+            </LoadingButton>
+          </form>
+        </AuthLayout>
+
+        {/* Register New Institution — page lower-right corner */}
+        <button
+          onClick={handleStartAdminRegister}
+          style={{
+            position: "fixed",
+            right: 28,
+            bottom: 28,
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            border: "none",
+            background: MEDICAL_BLUE,
+            boxShadow:
+              "0 6px 18px rgba(0,122,255,0.30)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            transition:
+              "transform 0.15s ease, box-shadow 0.15s ease",
+          }}
+          title="Register New Institution"
+          aria-label="Register New Institution"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform =
+              "scale(1.06)";
+            e.currentTarget.style.boxShadow =
+              "0 8px 22px rgba(0,122,255,0.38)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform =
+              "scale(1)";
+            e.currentTarget.style.boxShadow =
+              "0 6px 18px rgba(0,122,255,0.30)";
+          }}
         >
-          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="8.5" cy="7" r="4" />
-          <line
-            x1="20"
-            y1="8"
-            x2="20"
-            y2="14"
-          />
-          <line
-            x1="23"
-            y1="11"
-            x2="17"
-            y2="11"
-          />
-        </svg>
-      </button>
-    </div>
+          <svg
+            width="26"
+            height="26"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="8.5" cy="7" r="4" />
+            <line
+              x1="20"
+              y1="8"
+              x2="20"
+              y2="14"
+            />
+            <line
+              x1="23"
+              y1="11"
+              x2="17"
+              y2="11"
+            />
+          </svg>
+        </button>
+      </div>
+    </StartupShell>
   );
 }
