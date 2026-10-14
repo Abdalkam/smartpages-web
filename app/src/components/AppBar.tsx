@@ -238,6 +238,13 @@ export default function AppBar() {
 
     return (
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "rgba(255,255,255,0.8)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "0.33px solid #E5E5EA", flexShrink: 0, zIndex: 1000, width: "100%", boxSizing: "border-box", gap: "24px", position: "sticky", top: 0 }}>
+            <a href="/" title="Back to blog"
+                style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(118,118,128,0.12)", color: "#1C1C1E", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, textDecoration: "none", cursor: "pointer" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12" />
+                    <polyline points="12 19 5 12 12 5" />
+                </svg>
+            </a>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0, overflow: "hidden" }}>
                 {hasLeftInfo && (
                     <>
