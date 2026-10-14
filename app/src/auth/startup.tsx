@@ -22,8 +22,8 @@ type AppScreen = "main" | "login";
 const NAV_LINKS = [
   { label: "Home", href: "/" },
   { label: "Blog", href: "/articles" },
-  { label: "E-Learning", href: "/app/" },
   { label: "About", href: "/about" },
+  { label: "E-Learning", href: "/app/" },
 ];
 
 /* ── Startup media type detection (mirrors settings.tsx) ── */
