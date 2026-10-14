@@ -1,6 +1,7 @@
 {
   "name": "smartpages-web",
   "private": true,
+  "workspaces": ["blog", "app"],
   "scripts": {
     "build": "npm run build:blog && npm run build:app",
     "build:blog": "cd blog && npm run build -- --outDir=../dist --emptyOutDir",
