@@ -36,9 +36,9 @@ function Navbar(p) {
           <nav className="nav-links">
             <Link to="/" className={location.pathname === "/" ? "nav-link-active" : ""}>Home</Link>
             <Link to="/articles" className={location.pathname.startsWith("/article") || location.pathname === "/articles" ? "nav-link-active" : ""}>Blog</Link>
+            <Link to="/about" className={location.pathname === "/about" ? "nav-link-active" : ""}>About</Link>
             {/* E-Learning — full page navigation into the SmartPages app (mounted at /app) */}
             <a href="/app/">E-Learning</a>
-            <Link to="/about" className={location.pathname === "/about" ? "nav-link-active" : ""}>About</Link>
           </nav>
           <Link to="/subscribe" className="subscribe-btn">Subscribe</Link>
         </div>
@@ -74,8 +74,8 @@ function Footer(p) {
             <span className="footer-col-title">Navigation</span>
             <Link to="/">Home</Link>
             <Link to="/articles">Blog</Link>
-            <a href="/app/">E-Learning</a>
             <Link to="/about">About</Link>
+            <a href="/app/">E-Learning</a>
           </div>
 
           <div className="footer-contact-col">
