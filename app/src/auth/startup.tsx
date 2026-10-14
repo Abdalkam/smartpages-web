@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, Link } from "react-router-dom";
 import { loginUser, addUser } from "../database/userDB";
 import { loginTenant } from "../api/authApi";
 import {
@@ -11,7 +11,6 @@ import {
 } from "../database/sync";
 import { supabase } from "../auth/supabase";
 import LoadingButton from "../components/LoadingButton";
-import AppNavbar from "../components/AppNavbar";
 import PhoneEntry from "./PhoneEntry";
 import VerifyCode from "./VerifyCode";
 import RegisterAdmin from "./RegisterAdmin";
@@ -28,7 +27,15 @@ type AppScreen =
   | "admin_otp"
   | "admin_register";
 
-/* ── Shared shell: Medstat-style app bar on top, screen content below ── */
+/* ── Edit these to match your real routes ── */
+const NAV_LINKS = [
+  { label: "Home", to: "/" },
+  { label: "Blog", to: "/articles" },
+  { label: "E-Learning", to: "/e-learning" },
+  { label: "About", to: "/about" },
+];
+
+/* ── Medstat-style app bar + shell (self-contained) ── */
 function StartupShell({
   children,
   brandName,
@@ -44,6 +51,8 @@ function StartupShell({
   showCta?: boolean;
   onCta?: () => void;
 }) {
+  const location = useLocation();
+
   return (
     <div
       style={{
@@ -54,14 +63,165 @@ function StartupShell({
         fontFamily: iosFont,
       }}
     >
-      <AppNavbar
-        brandName={brandName}
-        logo={logo}
-        version={version}
-        showCta={showCta}
-        ctaLabel="Subscribe"
-        onCta={onCta}
-      />
+      <style>{`
+        .msb-bar {
+          position: sticky;
+          top: 0;
+          z-index: 1000;
+          width: 100%;
+          flex-shrink: 0;
+          background: #ffffff;
+          border-bottom: 1px solid #e5e7eb;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        }
+        .msb-inner {
+          max-width: 1280px;
+          margin: 0 auto;
+          padding: 0 32px;
+          height: 72px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+        }
+        .msb-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          text-decoration: none;
+          min-width: 0;
+        }
+        .msb-logo {
+          width: 44px;
+          height: 44px;
+          object-fit: contain;
+          flex-shrink: 0;
+        }
+        .msb-brand-text {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.25;
+          min-width: 0;
+        }
+        .msb-name {
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 20px;
+          font-weight: 700;
+          color: #111827;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .msb-tagline {
+          font-size: 12px;
+          color: #6b7280;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .msb-right {
+          display: flex;
+          align-items: center;
+          gap: 28px;
+          flex-shrink: 0;
+        }
+        .msb-links {
+          display: flex;
+          align-items: center;
+          gap: 28px;
+        }
+        .msb-link {
+          position: relative;
+          font-size: 15px;
+          color: #374151;
+          text-decoration: none;
+          padding: 6px 2px;
+          transition: color 0.15s ease;
+        }
+        .msb-link:hover {
+          color: #1d4ed8;
+        }
+        .msb-link.active {
+          color: #1d4ed8;
+          font-weight: 500;
+        }
+        .msb-link.active::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: -2px;
+          height: 2px;
+          border-radius: 2px;
+          background: #1d4ed8;
+        }
+        .msb-version {
+          font-size: 12px;
+          color: #9ca3af;
+        }
+        .msb-cta {
+          height: 44px;
+          padding: 0 26px;
+          border: none;
+          border-radius: 8px;
+          background: #1e3a8a;
+          color: #ffffff;
+          font-size: 15px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+        .msb-cta:hover {
+          background: #1e40af;
+        }
+        @media (max-width: 900px) {
+          .msb-links {
+            display: none;
+          }
+        }
+      `}</style>
+
+      <header className="msb-bar">
+        <div className="msb-inner">
+          <Link to="/" className="msb-brand">
+            <img src={logo} alt="Logo" className="msb-logo" />
+            <span className="msb-brand-text">
+              <span className="msb-name">{brandName}</span>
+              <span className="msb-tagline">
+                Building resilient healthy communities
+              </span>
+            </span>
+          </Link>
+
+          <div className="msb-right">
+            <nav className="msb-links">
+              {NAV_LINKS.map((l) => (
+                <Link
+                  key={l.label}
+                  to={l.to}
+                  className={
+                    "msb-link" +
+                    (location.pathname === l.to ? " active" : "")
+                  }
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+
+            {version && (
+              <span className="msb-version">v{version}</span>
+            )}
+
+            {showCta && (
+              <button className="msb-cta" onClick={onCta}>
+                Subscribe
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
       <div
         style={{
           flex: 1,
@@ -500,10 +660,10 @@ export default function Startup() {
           const b = {
             businessName:
               settings.business_name || "",
-            logo: settings.logo || "",
-            phone: settings.phone || "",
-            loginBackground:
-              settings.login_background || "",
+              logo: settings.logo || "",
+              phone: settings.phone || "",
+              loginBackground:
+                settings.login_background || "",
           };
 
           setBranding(b);
@@ -963,7 +1123,7 @@ export default function Startup() {
           height: "100%",
         }}
       >
-        <AuthLayout watermark>
+        <AuthLayout watermark logo={navLogo}>
           <h1
             style={{
               textAlign: "center",
