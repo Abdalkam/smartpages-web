@@ -20,12 +20,22 @@ const MEDICAL_BLUE = "#007AFF";
 const iosFont =
   "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
 
+const DEFAULT_SITE_NAME = "Medstat Initiative";
+const DEFAULT_TAGLINE = "Building resilient healthy communities";
+const DEFAULT_LOGO = "/loadlogo.png";
+
 type AppScreen =
   | "main"
   | "login"
   | "admin_sms"
   | "admin_otp"
   | "admin_register";
+
+type SiteSettings = {
+  logoUrl: string;
+  siteName: string;
+  tagline: string;
+};
 
 /* ── Edit these to match your real routes ── */
 const NAV_LINKS = [
@@ -39,6 +49,7 @@ const NAV_LINKS = [
 function StartupShell({
   children,
   brandName,
+  tagline,
   logo,
   version,
   showCta,
@@ -46,6 +57,7 @@ function StartupShell({
 }: {
   children: React.ReactNode;
   brandName?: string;
+  tagline?: string;
   logo?: string;
   version?: string;
   showCta?: boolean;
@@ -184,12 +196,19 @@ function StartupShell({
       <header className="msb-bar">
         <div className="msb-inner">
           <Link to="/" className="msb-brand">
-            <img src={logo} alt="Logo" className="msb-logo" />
+            <img
+              src={logo}
+              alt={brandName}
+              className="msb-logo"
+              onError={(e) => {
+                if (e.currentTarget.src !== window.location.origin + DEFAULT_LOGO) {
+                  e.currentTarget.src = DEFAULT_LOGO;
+                }
+              }}
+            />
             <span className="msb-brand-text">
               <span className="msb-name">{brandName}</span>
-              <span className="msb-tagline">
-                Building resilient healthy communities
-              </span>
+              <span className="msb-tagline">{tagline}</span>
             </span>
           </Link>
 
@@ -410,6 +429,9 @@ export default function Startup() {
   const [screen, setScreen] =
     useState<AppScreen>("main");
 
+  const [siteSettings, setSiteSettings] =
+    useState<SiteSettings | null>(null);
+
   const [branding, setBranding] = useState<{
     businessName: string;
     logo: string;
@@ -441,6 +463,48 @@ export default function Startup() {
     getVersion()
       .then((v) => setAppVersion(v))
       .catch(() => {});
+
+    /* ── Site settings (logo, name, tagline) from public.site_settings ── */
+    const cachedSettings =
+      localStorage.getItem("siteSettings");
+
+    if (cachedSettings) {
+      try {
+        setSiteSettings(JSON.parse(cachedSettings));
+      } catch {
+        localStorage.removeItem("siteSettings");
+      }
+    }
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("site_settings")
+          .select("logo_url, site_name, tagline")
+          .eq("id", "main")
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          const s: SiteSettings = {
+            logoUrl: data.logo_url || "",
+            siteName:
+              data.site_name || DEFAULT_SITE_NAME,
+            tagline: data.tagline || DEFAULT_TAGLINE,
+          };
+
+          setSiteSettings(s);
+
+          localStorage.setItem(
+            "siteSettings",
+            JSON.stringify(s)
+          );
+        }
+      } catch {
+        // Offline — cached settings (or defaults) shown.
+      }
+    })();
 
     const storedUser =
       localStorage.getItem("currentUser");
@@ -660,10 +724,10 @@ export default function Startup() {
           const b = {
             businessName:
               settings.business_name || "",
-              logo: settings.logo || "",
-              phone: settings.phone || "",
-              loginBackground:
-                settings.login_background || "",
+            logo: settings.logo || "",
+            phone: settings.phone || "",
+            loginBackground:
+              settings.login_background || "",
           };
 
           setBranding(b);
@@ -862,15 +926,23 @@ export default function Startup() {
     transition: "background 0.2s",
   };
 
+  /* ── Navbar uses global site_settings ── */
   const navBrand =
-    branding?.businessName || "Medstat initiative";
+    siteSettings?.siteName || DEFAULT_SITE_NAME;
+  const navTagline =
+    siteSettings?.tagline || DEFAULT_TAGLINE;
   const navLogo =
-    branding?.logo || "/loadlogo.png";
+    siteSettings?.logoUrl || DEFAULT_LOGO;
+
+  /* ── Auth card: institution logo first, then site logo ── */
+  const cardLogo =
+    branding?.logo || navLogo;
 
   if (screen === "admin_sms") {
     return (
       <StartupShell
         brandName={navBrand}
+        tagline={navTagline}
         logo={navLogo}
         version={appVersion}
         showCta={false}
@@ -887,6 +959,7 @@ export default function Startup() {
     return (
       <StartupShell
         brandName={navBrand}
+        tagline={navTagline}
         logo={navLogo}
         version={appVersion}
         showCta={false}
@@ -904,6 +977,7 @@ export default function Startup() {
     return (
       <StartupShell
         brandName={navBrand}
+        tagline={navTagline}
         logo={navLogo}
         version={appVersion}
         showCta={false}
@@ -922,13 +996,14 @@ export default function Startup() {
     return (
       <StartupShell
         brandName={navBrand}
+        tagline={navTagline}
         logo={navLogo}
         version={appVersion}
         showCta={false}
       >
         <AuthLayout
           background={branding?.loginBackground}
-          logo={branding?.logo || "/loadlogo.png"}
+          logo={cardLogo}
           showBack
           onBack={() => {
             stopPeriodicPull();
@@ -1017,13 +1092,14 @@ export default function Startup() {
     return (
       <StartupShell
         brandName={navBrand}
+        tagline={navTagline}
         logo={navLogo}
         version={appVersion}
         showCta={false}
       >
         <AuthLayout
           background={branding?.loginBackground}
-          logo={branding?.logo || "/loadlogo.png"}
+          logo={cardLogo}
           showBack
           onBack={() => {
             stopPeriodicPull();
@@ -1111,6 +1187,7 @@ export default function Startup() {
   return (
     <StartupShell
       brandName={navBrand}
+      tagline={navTagline}
       logo={navLogo}
       version={appVersion}
       showCta
@@ -1123,7 +1200,7 @@ export default function Startup() {
           height: "100%",
         }}
       >
-        <AuthLayout watermark logo={navLogo}>
+        <AuthLayout watermark logo={cardLogo}>
           <h1
             style={{
               textAlign: "center",
