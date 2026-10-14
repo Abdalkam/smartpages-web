@@ -11,21 +11,12 @@ import {
 } from "../database/sync";
 import { supabase } from "../auth/supabase";
 import LoadingButton from "../components/LoadingButton";
-import PhoneEntry from "./PhoneEntry";
-import VerifyCode from "./VerifyCode";
-import RegisterAdmin from "./RegisterAdmin";
 import { getVersion } from "@tauri-apps/api/app";
 
-const MEDICAL_BLUE = "#007AFF";
 const iosFont =
   "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
 
-type AppScreen =
-  | "main"
-  | "login"
-  | "admin_sms"
-  | "admin_otp"
-  | "admin_register";
+type AppScreen = "main" | "login";
 
 /* ── Nav routes — full page navigation to the blog (app is mounted at /app/) ── */
 const NAV_LINKS = [
@@ -34,6 +25,155 @@ const NAV_LINKS = [
   { label: "E-Learning", href: "/app/" },
   { label: "About", href: "/about" },
 ];
+
+/* ── Startup media type detection (mirrors settings.tsx) ── */
+type MediaType = "image" | "video" | "pdf";
+
+function detectMediaType(url: string): MediaType | null {
+  if (!url) return null;
+  const clean = url.split("?")[0].toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|svg)$/.test(clean)) return "image";
+  if (/\.(mp4|webm|mov|m4v|ogg)$/.test(clean)) return "video";
+  if (/\.pdf$/.test(clean)) return "pdf";
+  return null;
+}
+
+/* ── Full-bleed media background: image / video / pdf, edge to edge ── */
+function MediaBackground({
+  url,
+  type,
+}: {
+  url: string;
+  type: MediaType | null;
+}) {
+  if (!url) return null;
+  const t = type || detectMediaType(url);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        overflow: "hidden",
+        zIndex: 0,
+      }}
+    >
+      {t === "video" ? (
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        >
+          <source src={url} />
+        </video>
+      ) : t === "pdf" ? (
+        <iframe
+          src={url}
+          title="Startup media"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            border: "none",
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundImage: `url(${url})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
+      )}
+
+      {/* Scrim for card readability (light for PDF, dark for image/video) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background:
+            t === "pdf" ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.38)",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+/* ── Fixed bottom footer: tagline with app logo beneath it ── */
+function PoweredByBar() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        padding: "10px 0 12px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 6,
+        background: "rgba(255,255,255,0.9)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        borderTop: "1px solid rgba(0,0,0,0.06)",
+        zIndex: 200,
+        fontFamily: iosFont,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: "#6b7280",
+          letterSpacing: "0.2px",
+        }}
+      >
+        Powered by Smartpage © 2026
+      </span>
+      <img
+        src="/applogo.png"
+        alt="Smartpage"
+        style={{
+          width: 30,
+          height: 30,
+          objectFit: "contain",
+          borderRadius: 6,
+          opacity: 0.9,
+        }}
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+        }}
+      />
+    </div>
+  );
+}
 
 /* ── Medstat-style app bar + shell — branding comes only from Supabase ── */
 function StartupShell({
@@ -274,17 +414,17 @@ function StartupShell({
 const AuthLayout = ({
   children,
   background,
-  logo,
   showBack,
   onBack,
   watermark,
+  transparent = false,
 }: {
   children: React.ReactNode;
   background?: string;
-  logo?: string;
   showBack?: boolean;
   onBack?: () => void;
   watermark?: boolean;
+  transparent?: boolean;
 }) => (
   <div
     style={{
@@ -295,16 +435,22 @@ const AuthLayout = ({
       justifyContent: "center",
       backgroundImage: watermark
         ? "none"
+        : transparent
+        ? "none"
         : background
         ? `url(${background})`
         : "linear-gradient(135deg, #F2F2F7 0%, #E5E5EA 100%)",
       backgroundSize: watermark ? "auto" : "cover",
       backgroundPosition: "center",
-      backgroundColor: watermark ? "#FFFFFF" : "#F2F2F7",
+      backgroundColor: watermark
+        ? "#FFFFFF"
+        : transparent
+        ? "transparent"
+        : "#F2F2F7",
       fontFamily: iosFont,
       overflow: "hidden",
       position: "relative",
-      padding: 24,
+      padding: transparent ? 0 : 24,
       boxSizing: "border-box",
     }}
   >
@@ -338,9 +484,7 @@ const AuthLayout = ({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: logo
-            ? `url(${logo})`
-            : "url(/loadlogo.png)",
+          backgroundImage: "url(/loadlogo.png)",
           backgroundRepeat: "repeat",
           backgroundSize: "120px 120px",
           opacity: 0.08,
@@ -351,7 +495,7 @@ const AuthLayout = ({
       />
     )}
 
-    {!watermark && background && (
+    {!watermark && !transparent && background && (
       <div
         style={{
           position: "absolute",
@@ -417,22 +561,6 @@ const AuthLayout = ({
         boxSizing: "border-box",
       }}
     >
-      {logo && (
-        <img
-          src={logo}
-          alt="Logo"
-          style={{
-            width: 80,
-            height: 80,
-            borderRadius: 20,
-            objectFit: "cover",
-            display: "block",
-            margin: "0 auto 24px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
-          }}
-        />
-      )}
-
       {children}
     </div>
   </div>
@@ -452,6 +580,10 @@ export default function Startup() {
   const [siteName, setSiteName] = useState("");
   const [siteTagline, setSiteTagline] = useState("");
 
+  /* ── Startup page media (image / video / pdf) ── */
+  const [startupMediaUrl, setStartupMediaUrl] = useState("");
+  const [startupMediaType, setStartupMediaType] = useState("");
+
   const [branding, setBranding] = useState<{
     businessName: string;
     logo: string;
@@ -467,23 +599,19 @@ export default function Startup() {
   const [loading, setLoading] = useState(false);
 
   const [businessName, setBusinessName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [tenantId, setTenantId] = useState<string | null>(
-    null
-  );
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
-
-  const [tempToken, setTempToken] =
-    useState<string | null>(null);
 
   const [requiresUnlock, setRequiresUnlock] = useState(false);
 
   /* ── Fetch from Supabase only: site_settings first, supadmin_settings fallback ── */
   async function fetchSiteSettings() {
-    var logo: string | null = null;
-    var name: string | null = null;
-    var tag: string | null = null;
+    let logo: string | null = null;
+    let name: string | null = null;
+    let tag: string | null = null;
+    let mediaUrl: string | null = null;
+    let mediaType: string | null = null;
 
     // Try site_settings
     try {
@@ -498,6 +626,8 @@ export default function Startup() {
         logo = d.logo_url || null;
         name = d.site_name || null;
         tag = d.tagline || null;
+        mediaUrl = d.startup_media_url || null;
+        mediaType = d.startup_media_type || null;
       }
     } catch {
       // Skipped.
@@ -516,6 +646,10 @@ export default function Startup() {
         if (!logo && d2.logo_url) logo = d2.logo_url;
         if (!name && d2.business_name) name = d2.business_name;
         if (!tag && d2.tagline) tag = d2.tagline;
+        if (!mediaUrl && d2.startup_media_url) {
+          mediaUrl = d2.startup_media_url;
+          mediaType = d2.startup_media_type || mediaType;
+        }
       }
     } catch {
       // Skipped.
@@ -525,6 +659,10 @@ export default function Startup() {
     if (logo) setSiteLogo(logo);
     if (name) setSiteName(name);
     if (tag) setSiteTagline(tag);
+    if (mediaUrl) {
+      setStartupMediaUrl(mediaUrl);
+      setStartupMediaType(mediaType || "");
+    }
   }
 
   useEffect(() => {
@@ -597,41 +735,6 @@ export default function Startup() {
       stopPeriodicPull();
     };
   }, [location.pathname]);
-
-  function handleStartAdminRegister() {
-    setScreen("admin_sms");
-  }
-
-  function handleSmsSent(phone: string) {
-    setPhoneNumber(phone);
-    setScreen("admin_otp");
-  }
-
-  function handleOtpVerified(token: string) {
-    setTempToken(token);
-    setScreen("admin_register");
-  }
-
-  async function handleAdminCreated(user: any) {
-    if (user) {
-      enableSyncHooks();
-      startPeriodicPull(60000);
-
-      try {
-        await pullAllTenantData(user.tenantId);
-      } catch {
-        // Sync on next pull.
-      }
-
-      if (user.role === "admin") {
-        setRedirectRoute("/admin");
-      } else {
-        setRedirectRoute("/user");
-      }
-    } else {
-      setScreen("main");
-    }
-  }
 
   async function handleTrainerLookup() {
     setLookupError("");
@@ -954,61 +1057,6 @@ export default function Startup() {
     transition: "background 0.2s",
   };
 
-  /* ── Auth card: institution logo first, then fetched site logo ── */
-  const cardLogo =
-    branding?.logo || siteLogo || undefined;
-
-  if (screen === "admin_sms") {
-    return (
-      <StartupShell
-        brandName={siteName || undefined}
-        tagline={siteTagline || undefined}
-        logo={siteLogo || undefined}
-        version={appVersion}
-      >
-        <PhoneEntry
-          onSent={handleSmsSent}
-          onBack={() => setScreen("main")}
-        />
-      </StartupShell>
-    );
-  }
-
-  if (screen === "admin_otp") {
-    return (
-      <StartupShell
-        brandName={siteName || undefined}
-        tagline={siteTagline || undefined}
-        logo={siteLogo || undefined}
-        version={appVersion}
-      >
-        <VerifyCode
-          phone={phoneNumber}
-          onVerified={handleOtpVerified}
-          onBack={() => setScreen("admin_sms")}
-        />
-      </StartupShell>
-    );
-  }
-
-  if (screen === "admin_register") {
-    return (
-      <StartupShell
-        brandName={siteName || undefined}
-        tagline={siteTagline || undefined}
-        logo={siteLogo || undefined}
-        version={appVersion}
-      >
-        <RegisterAdmin
-          phone={phoneNumber}
-          tempToken={tempToken || ""}
-          onComplete={handleAdminCreated}
-          onBack={() => setScreen("admin_otp")}
-        />
-      </StartupShell>
-    );
-  }
-
   if (requiresUnlock) {
     return (
       <StartupShell
@@ -1019,7 +1067,6 @@ export default function Startup() {
       >
         <AuthLayout
           background={branding?.loginBackground}
-          logo={cardLogo}
           showBack
           onBack={() => {
             stopPeriodicPull();
@@ -1114,7 +1161,6 @@ export default function Startup() {
       >
         <AuthLayout
           background={branding?.loginBackground}
-          logo={cardLogo}
           showBack
           onBack={() => {
             stopPeriodicPull();
@@ -1212,146 +1258,105 @@ export default function Startup() {
           position: "relative",
           width: "100%",
           height: "100%",
+          background:
+            "linear-gradient(135deg, #F2F2F7 0%, #E5E5EA 100%)",
         }}
       >
-        <AuthLayout watermark logo={cardLogo}>
-          <h1
-            style={{
-              textAlign: "center",
-              fontSize: 24,
-              color: "#1C1C1E",
-              fontWeight: 700,
-              marginBottom: 8,
-            }}
-          >
-            Welcome
-          </h1>
+        {/* Full-width media background (image / video / pdf) */}
+        <MediaBackground
+          url={startupMediaUrl}
+          type={(startupMediaType || null) as MediaType | null}
+        />
 
-          <p
-            style={{
-              textAlign: "center",
-              fontSize: 15,
-              color: "#8E8E93",
-              marginBottom: 24,
-            }}
-          >
-            Enter your institution to continue
-          </p>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleTrainerLookup();
-            }}
-            style={{ width: "100%" }}
-          >
-            <input
-              type="text"
-              placeholder="Enter Institution Name"
-              value={businessName}
-              onChange={(e) => {
-                setBusinessName(e.target.value);
-                setLookupError("");
-              }}
-              style={inputStyle}
-              autoFocus
-              autoComplete="organization"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-
-            {lookupError && (
-              <p
-                style={{
-                  textAlign: "center",
-                  color: "#FF3B30",
-                  fontSize: 14,
-                  marginBottom: 12,
-                }}
-              >
-                {lookupError}
-              </p>
-            )}
-
-            <LoadingButton
-              type="submit"
-              loading={lookupLoading}
-              loadingLabel="Finding…"
-              disabled={!businessName.trim()}
-              style={{
-                height: 54,
-                padding: 0,
-              }}
-            >
-              Continue
-            </LoadingButton>
-          </form>
-        </AuthLayout>
-
-        {/* Register New Institution — page lower-right corner */}
-        <button
-          onClick={handleStartAdminRegister}
+        {/* Card layer — no logo in the page body */}
+        <div
           style={{
-            position: "fixed",
-            right: 28,
-            bottom: 28,
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            border: "none",
-            background: MEDICAL_BLUE,
-            boxShadow:
-              "0 6px 18px rgba(0,122,255,0.30)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-            transition:
-              "transform 0.15s ease, box-shadow 0.15s ease",
-          }}
-          title="Register New Institution"
-          aria-label="Register New Institution"
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform =
-              "scale(1.06)";
-            e.currentTarget.style.boxShadow =
-              "0 8px 22px rgba(0,122,255,0.38)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform =
-              "scale(1)";
-            e.currentTarget.style.boxShadow =
-              "0 6px 18px rgba(0,122,255,0.30)";
+            position: "relative",
+            zIndex: 1,
+            width: "100%",
+            height: "100%",
+            paddingBottom: 96,
+            boxSizing: "border-box",
           }}
         >
-          <svg
-            width="26"
-            height="26"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#fff"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="8.5" cy="7" r="4" />
-            <line
-              x1="20"
-              y1="8"
-              x2="20"
-              y2="14"
-            />
-            <line
-              x1="23"
-              y1="11"
-              x2="17"
-              y2="11"
-            />
-          </svg>
-        </button>
+          <AuthLayout transparent>
+            <h1
+              style={{
+                textAlign: "center",
+                fontSize: 24,
+                color: "#1C1C1E",
+                fontWeight: 700,
+                marginBottom: 8,
+              }}
+            >
+              Welcome
+            </h1>
+
+            <p
+              style={{
+                textAlign: "center",
+                fontSize: 15,
+                color: "#8E8E93",
+                marginBottom: 24,
+              }}
+            >
+              Enter your institution to continue
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleTrainerLookup();
+              }}
+              style={{ width: "100%" }}
+            >
+              <input
+                type="text"
+                placeholder="Enter Institution Name"
+                value={businessName}
+                onChange={(e) => {
+                  setBusinessName(e.target.value);
+                  setLookupError("");
+                }}
+                style={inputStyle}
+                autoFocus
+                autoComplete="organization"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+
+              {lookupError && (
+                <p
+                  style={{
+                    textAlign: "center",
+                    color: "#FF3B30",
+                    fontSize: 14,
+                    marginBottom: 12,
+                  }}
+                >
+                  {lookupError}
+                </p>
+              )}
+
+              <LoadingButton
+                type="submit"
+                loading={lookupLoading}
+                loadingLabel="Finding…"
+                disabled={!businessName.trim()}
+                style={{
+                  height: 54,
+                  padding: 0,
+                }}
+              >
+                Continue
+              </LoadingButton>
+            </form>
+          </AuthLayout>
+        </div>
+
+        {/* Bottom footer: tagline + app logo */}
+        <PoweredByBar />
       </div>
     </StartupShell>
   );
