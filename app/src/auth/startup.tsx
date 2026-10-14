@@ -28,7 +28,7 @@ type AppScreen =
   | "admin_otp"
   | "admin_register";
 
-/* ── Shared shell: app bar on top, screen content below ── */
+/* ── Shared shell: Medstat-style app bar on top, screen content below ── */
 function StartupShell({
   children,
   brandName,
@@ -50,7 +50,7 @@ function StartupShell({
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        background: "#F2F2F7",
+        background: "#FFFFFF",
         fontFamily: iosFont,
       }}
     >
@@ -59,7 +59,7 @@ function StartupShell({
         logo={logo}
         version={version}
         showCta={showCta}
-        ctaLabel="Register Institution"
+        ctaLabel="Subscribe"
         onCta={onCta}
       />
       <div
@@ -211,13 +211,11 @@ const AuthLayout = ({
         zIndex: 1,
         width: "100%",
         maxWidth: 400,
-        background: "rgba(255, 255, 255, 0.85)",
-        backdropFilter: "blur(30px)",
-        WebkitBackdropFilter: "blur(30px)",
+        background: "#FFFFFF",
         borderRadius: 28,
         padding: "40px 32px",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
-        border: "1px solid rgba(255,255,255,0.6)",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.10)",
+        border: "1px solid rgba(0,0,0,0.05)",
         animation: "fadeUp 0.6s ease-out",
         boxSizing: "border-box",
       }}
@@ -695,7 +693,7 @@ export default function Startup() {
     padding: "0 16px",
     border: "none",
     outline: "none",
-    background: "rgba(255,255,255,0.8)",
+    background: "rgba(0,0,0,0.03)",
     fontSize: 17,
     color: "#1C1C1E",
     boxSizing: "border-box",
@@ -705,7 +703,7 @@ export default function Startup() {
   };
 
   const navBrand =
-    branding?.businessName || "MedTrain";
+    branding?.businessName || "Medstat initiative";
   const navLogo =
     branding?.logo || "/loadlogo.png";
 

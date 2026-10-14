@@ -5,22 +5,24 @@ export type AppNavLink = { label: string; to: string };
 
 const DEFAULT_LINKS: AppNavLink[] = [
   { label: "Home", to: "/" },
-  { label: "Articles", to: "/articles" },
+  { label: "Blog", to: "/articles" },
+  { label: "E-Learning", to: "/e-learning" },
   { label: "About", to: "/about" },
-  { label: "Contact", to: "/contact" },
 ];
 
 export default function AppNavbar({
-  brandName = "MedTrain",
+  brandName = "Medstat initiative",
+  tagline = "Building resilient healthy communities",
   logo = "/loadlogo.png",
   links = DEFAULT_LINKS,
   active,
   version,
   showCta = true,
-  ctaLabel = "Register Institution",
+  ctaLabel = "Subscribe",
   onCta,
 }: {
   brandName?: string;
+  tagline?: string;
   logo?: string;
   links?: AppNavLink[];
   active?: string;
@@ -36,28 +38,34 @@ export default function AppNavbar({
     <header className="app-navbar">
       <div className="app-navbar-inner">
         <Link to="/" className="app-navbar-brand">
-          <img src={logo} alt={brandName} />
-          <span>{brandName}</span>
+          <img src={logo} alt={brandName} className="app-navbar-logo" />
+          <span className="app-navbar-brand-text">
+            <span className="app-navbar-brand-name">{brandName}</span>
+            {tagline && (
+              <span className="app-navbar-brand-tagline">{tagline}</span>
+            )}
+          </span>
         </Link>
 
-        <nav className="app-navbar-links">
-          {links.map((l) => (
-            <Link
-              key={l.label}
-              to={l.to}
-              className={
-                "app-navbar-link" + (current === l.to ? " active" : "")
-              }
-            >
-              {l.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="app-navbar-right">
+          <nav className="app-navbar-links">
+            {links.map((l) => (
+              <Link
+                key={l.label}
+                to={l.to}
+                className={
+                  "app-navbar-link" + (current === l.to ? " active" : "")
+                }
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
 
-        <div className="app-navbar-actions">
           {version && (
             <span className="app-navbar-version">v{version}</span>
           )}
+
           {showCta && (
             <button className="app-navbar-cta" onClick={onCta}>
               {ctaLabel}
