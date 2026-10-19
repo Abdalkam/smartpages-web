@@ -1,3 +1,14 @@
+// src/database/db.ts
+//
+// Patched. Changes vs. original:
+//   - VERSION 19 added: one-time upgrade that normalizes every existing
+//     `role` value in local Dexie to lowercase. Rows saved as "Trainer" /
+//     "TRAINER" before this patch are rewritten to "trainer" so the
+//     `role === "trainer"` filter in getTrainers() stops missing them.
+//   - `users.hook('creating', ...)` now normalizes `role` to lowercase
+//     so new writes never reintroduce mixed-case roles.
+//   - Same normalization is applied to the `tenant_id` ↔ `tenantId` mirror
+//     in the creating hook so lookups by either spelling keep working.
 import Dexie, { type Table } from "dexie";
 import type {
   User, Course, CourseMaterial, Enrollment, LiveSession,
@@ -47,6 +58,14 @@ export async function generateConsistentId(prefix: string, uniqueString: string)
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return `${prefix}_${hashHex.substring(0, 16)}`;
+}
+
+const ALLOWED_ROLES = new Set(["admin", "trainer", "trainee"]);
+
+function normalizeRole(role: unknown): string | undefined {
+  if (typeof role !== "string") return undefined;
+  const r = role.trim().toLowerCase();
+  return ALLOWED_ROLES.has(r) ? r : undefined;
 }
 
 export class MedstatDatabase extends Dexie {
@@ -191,10 +210,57 @@ export class MedstatDatabase extends Dexie {
       formCache: "id, tenant_id, status"
     });
 
+    // VERSION 19: Normalize every existing `role` value in local Dexie to
+    // lowercase. Rows saved as "Trainer" / "TRAINER" before this patch
+    // would otherwise stay invisible to the `role === "trainer"` filter
+    // used by getTrainers(). Schema is unchanged — only data is rewritten.
+    this.version(19).stores({
+      users: "id,tenantId,email,username,role,createdAt,synced",
+      courses: "id,tenantId,name,createdAt",
+      materials: "id,courseId,title,fileType,presentationOrder,createdAt",
+      enrollments: "id,tenantId,courseId,userId,[userId+courseId],createdAt",
+      liveSessions: "id,courseId,trainerId,active,createdAt",
+      livePresentations: "id,courseId,materialId",
+      chatMessages: "id,courseId,userId,createdAt",
+      settings: "id,tenantId",
+      activeAttendances: "userId,courseId,[userId+courseId]",
+      raisedHands: "userId,courseId,[userId+courseId]",
+      assignments: "id,tenantId,courseId,trainerId",
+      assignmentFields: "id,assignmentId,type",
+      assignmentSubmissions: "id,assignmentId,userId",
+      schedules: "id,tenantId,courseId,trainerId,scheduledAt",
+      smsLogs: "id,tenant_id,phone,status,sentAt",
+      allowedSpeakers: "userId",
+      formCache: "id, tenant_id, status"
+    }).upgrade(async (tx) => {
+      await tx.table("users").toCollection().modify((u: any) => {
+        const norm = normalizeRole(u.role);
+        if (norm && u.role !== norm) {
+          u.role = norm;
+        } else if (!norm && u.role !== undefined) {
+          // Coerce anything outside the allowed set to 'trainee' so the
+          // row is at least visible and consistent.
+          u.role = "trainee";
+        }
+      });
+    });
+
     this.users.hook('creating', (_primKey, obj, _transaction) => {
       if (!obj.createdAt) obj.createdAt = new Date().toISOString();
       if (!obj.assignedCourses) obj.assignedCourses = [];
       if (obj.synced === undefined) obj.synced = false;
+
+      // Normalize role on every create so local DB never stores a mixed-case
+      // role. Mirrors the SQL CHECK constraint + the JS filter in getTrainers().
+      const norm = normalizeRole((obj as any).role);
+      (obj as any).role = norm ?? "trainee";
+
+      // Mirror tenant_id ↔ tenantId so lookups by either spelling work.
+      if ((obj as any).tenant_id && !(obj as any).tenantId) {
+        (obj as any).tenantId = (obj as any).tenant_id;
+      } else if ((obj as any).tenantId && !(obj as any).tenant_id) {
+        (obj as any).tenant_id = (obj as any).tenantId;
+      }
     });
 
     this.courses.hook('creating', (_primKey, obj, _transaction) => {

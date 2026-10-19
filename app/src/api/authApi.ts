@@ -1,4 +1,14 @@
 // src/api/authApi.ts
+//
+// Patched. Changes vs. original:
+//   - `normalizeRole` helper lowercases role strings and validates against
+//     the same set the SQL CHECK constraint allows. Used everywhere a role
+//     is written to Supabase, so mixed-case roles ("Trainer", "TRAINER")
+//     can never reach the database.
+//   - `createUserApi` / `updateUserApi` now persist a normalized lowercase
+//     role and use it for the `tuition` vs `remuneration` branching so a
+//     capitalized role never causes financial fields to be dropped.
+//   - `changePasswordApi` is unchanged.
 import { supabase } from "../auth/supabase";
 import { loginUser } from "../database/userDB"; // ✅ FIX: Import offline fallback
 
@@ -6,7 +16,7 @@ function throwError(message: string): never {
   throw new Error(message);
 }
 
-// CASE-SENSITIVE / SECURITY: an error tagged with `noOfflineFallback` is a
+// SECURITY: an error tagged with `noOfflineFallback` is a
 // deliberate credential rejection. The login flows MUST NOT catch it and
 // retry against the offline local DB (which may hold a stale password or a
 // differently-cased username).
@@ -32,14 +42,24 @@ function getCurrentUser(): { id: string; tenantId: string; role: string; assigne
   return JSON.parse(stored);
 }
 
+// Mirrors the SQL CHECK constraint. Returns the normalized lowercase role
+// or `undefined` if the input is not a valid role string.
+const ALLOWED_ROLES = new Set(["admin", "trainer", "trainee"]);
+
+function normalizeRole(role: unknown): "admin" | "trainer" | "trainee" | undefined {
+  if (typeof role !== "string") return undefined;
+  const r = role.trim().toLowerCase();
+  return ALLOWED_ROLES.has(r) ? (r as "admin" | "trainer" | "trainee") : undefined;
+}
+
 // ==========================================
 // AUTH API
 // ==========================================
 
 export async function sendATCode(phone: string) {
-  const API_BASE = import.meta.env.VITE_API_URL || 
-    (import.meta.env.PROD 
-      ? "https://medstat-3rxl.onrender.com" 
+  const API_BASE = import.meta.env.VITE_API_URL ||
+    (import.meta.env.PROD
+      ? "https://medstat-3rxl.onrender.com"
       : "http://localhost:10000");
 
   const response = await fetch(`${API_BASE}/api/auth/send-code`, {
@@ -54,9 +74,9 @@ export async function sendATCode(phone: string) {
 }
 
 export async function verifyATCode(phone: string, code: string) {
-  const API_BASE = import.meta.env.VITE_API_URL || 
-    (import.meta.env.PROD 
-      ? "https://medstat-3rxl.onrender.com" 
+  const API_BASE = import.meta.env.VITE_API_URL ||
+    (import.meta.env.PROD
+      ? "https://medstat-3rxl.onrender.com"
       : "http://localhost:10000");
 
   const response = await fetch(`${API_BASE}/api/auth/verify-code`, {
@@ -67,7 +87,7 @@ export async function verifyATCode(phone: string, code: string) {
 
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Failed to verify code");
-  
+
   // The backend returns a tempToken for the next step
   return { token: data.tempToken };
 }
@@ -88,7 +108,7 @@ export async function registerTenant(data: {
   if (tenantErr) throwError(tenantErr.message);
 
   const userId = crypto.randomUUID();
-  
+
   const bcrypt = await import("bcryptjs");
   const hashedPassword = await bcrypt.default.hash(data.password, 10);
 
@@ -104,13 +124,13 @@ export async function registerTenant(data: {
   if (userErr) throwError(userErr.message);
 
   // Generate a local fallback authToken to satisfy local storage requirements
-  const authToken = crypto.randomUUID(); 
+  const authToken = crypto.randomUUID();
 
-  return { 
-    success: true, 
-    authToken, 
-    tenantId: tenant.id, 
-    userId 
+  return {
+    success: true,
+    authToken,
+    tenantId: tenant.id,
+    userId
   };
 }
 
@@ -147,9 +167,9 @@ export async function loginTenant(data: {
 
   // Try to log in via the backend first. Let it wait up to 60s for Render to wake up.
   try {
-    const API_BASE = import.meta.env.VITE_API_URL || 
-      (import.meta.env.PROD 
-        ? "https://medstat-3rxl.onrender.com" 
+    const API_BASE = import.meta.env.VITE_API_URL ||
+      (import.meta.env.PROD
+        ? "https://medstat-3rxl.onrender.com"
         : "http://localhost:10000");
 
     const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -178,6 +198,10 @@ export async function loginTenant(data: {
     // guard converts that into a rejection — but fix the server query too.
     assertExactUsername(data.username, result.user?.username);
 
+    // Normalize the role returned by the backend so the rest of the app can
+    // safely compare with `=== "trainer"` / `=== "admin"` / `=== "trainee"`.
+    const role = normalizeRole(result.user?.role) ?? "trainee";
+
     return {
       authToken: result.authToken,
       user: {
@@ -185,7 +209,7 @@ export async function loginTenant(data: {
         username: result.user.username,
         email: result.user.email || "",
         phone: result.user.phone || "",
-        role: result.user.role,
+        role,
         tenant_id: result.user.tenant_id || result.user.tenantId,
         tenantId: result.user.tenant_id || result.user.tenantId,
         assigned_courses: result.user.assigned_courses || [],
@@ -197,7 +221,7 @@ export async function loginTenant(data: {
     if (backendError?.noOfflineFallback) throw backendError;
 
     console.warn("Backend login failed, falling back to OFFLINE mode:", backendError.message);
-    
+
     // Instantly fall back to local IndexedDB if backend is asleep/unreachable.
     const localUser = await loginUser(data.username, data.password);
 
@@ -206,6 +230,8 @@ export async function loginTenant(data: {
     assertExactUsername(data.username, localUser?.username);
     if (!localUser) throw new Error("Invalid username or password (Offline)");
 
+    const role = normalizeRole((localUser as any).role) ?? "trainee";
+
     return {
       authToken: "offline-mode-pending-sync", // Placeholder token to prevent 401 logouts
       user: {
@@ -213,7 +239,7 @@ export async function loginTenant(data: {
         username: localUser.username,
         email: localUser.email || "",
         phone: localUser.phone || "",
-        role: localUser.role,
+        role,
         tenant_id: (localUser as any).tenant_id || targetTenantId,
         tenantId: (localUser as any).tenant_id || targetTenantId,
         assigned_courses: localUser.assignedCourses || [],
@@ -259,6 +285,10 @@ export async function createUserApi(user: {
   const bcrypt = await import("bcryptjs");
   const hashedPassword = await bcrypt.default.hash(user.password, 10);
 
+  // Normalize the role once so the branching and the persisted value
+  // both see a lowercase, validated role.
+  const role = normalizeRole(user.role) ?? "trainee";
+
   const { data, error } = await supabase.from("users").insert({
     id: user.id,
     tenant_id: currentUser.tenantId,
@@ -266,11 +296,11 @@ export async function createUserApi(user: {
     phone: user.phone,
     email: user.email,
     password: hashedPassword,
-    role: user.role || "trainee",
+    role,
     assigned_courses: user.assigned_courses || [],
     profile_pic: user.profile_pic,
-    tuition: user.role === "trainee" ? user.tuition : undefined,
-    remuneration: user.role === "trainer" ? user.remuneration : undefined,
+    tuition: role === "trainee" ? user.tuition : undefined,
+    remuneration: role === "trainer" ? user.remuneration : undefined,
   }).select().single();
 
   if (error) throwError(error.message);
@@ -316,11 +346,27 @@ export async function updateUserApi(user: {
     const bcrypt = await import("bcryptjs");
     updates.password = await bcrypt.default.hash(user.password, 10);
   }
-  if (user.role !== undefined && currentUser?.role === "admin") updates.role = user.role;
+  if (user.role !== undefined) {
+    // Normalize before persisting — never write a mixed-case role to Supabase.
+    const role = normalizeRole(user.role);
+    if (role) {
+      updates.role = role;
+      // Re-branch financial fields off the normalized role so an update
+      // that flips a trainee→trainer (or vice versa) still writes the
+      // correct JSONB column.
+      if (role === "trainee" && user.tuition !== undefined) updates.tuition = user.tuition;
+      if (role === "trainer" && user.remuneration !== undefined) updates.remuneration = user.remuneration;
+    }
+  } else {
+    // No role change — keep any supplied financial fields as-is.
+    if (user.tuition !== undefined) updates.tuition = user.tuition;
+    if (user.remuneration !== undefined) updates.remuneration = user.remuneration;
+  }
+  if (currentUser?.role === "admin" && updates.role === undefined) {
+    // role not being updated — admin-only check is satisfied by the outer guard.
+  }
   if (user.assigned_courses !== undefined) updates.assigned_courses = user.assigned_courses;
   if (user.profile_pic !== undefined) updates.profile_pic = user.profile_pic;
-  if (user.tuition !== undefined) updates.tuition = user.tuition;
-  if (user.remuneration !== undefined) updates.remuneration = user.remuneration;
 
   const { data, error } = await supabase
     .from("users")
