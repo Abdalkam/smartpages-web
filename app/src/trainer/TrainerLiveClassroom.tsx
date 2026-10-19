@@ -367,30 +367,49 @@ export default function TrainerLiveClassroom() {
   }
 
   const iosBtnStyle: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", border: "none", borderRadius: "10px", flex: 1, cursor: "pointer", transition: "transform 0.1s ease, opacity 0.2s ease", boxShadow: "0 1px 2px rgba(0,0,0,0.05)", WebkitTapHighlightColor: "transparent" };
-  const toolBtnStyle = (isActive: boolean): React.CSSProperties => ({ width: "44px", height: "44px", borderRadius: "12px", border: "none", background: isActive ? "rgba(0, 165, 244, 0.2)" : "transparent", color: isActive ? "#00A5F4" : "#8E8E93", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease", flexShrink: 0 });
+  const toolBtnStyle = (isActive: boolean): React.CSSProperties => ({ width: "clamp(36px,5vw,44px)", height: "clamp(36px,5vw,44px)", borderRadius: "12px", border: "none", background: isActive ? "rgba(0, 165, 244, 0.2)" : "transparent", color: isActive ? "#00A5F4" : "#8E8E93", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease", flexShrink: 0 });
   const permBtnStyle = (): React.CSSProperties => ({ border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600", cursor: "pointer" });
   // Floating classroom AV bar buttons
-  const avBtnStyle: React.CSSProperties = { width: "48px", height: "48px", borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform 0.1s ease", WebkitTapHighlightColor: "transparent" };
+  const avBtnStyle: React.CSSProperties = { width: "clamp(40px,6vw,48px)", height: "clamp(40px,6vw,48px)", borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform 0.1s ease", WebkitTapHighlightColor: "transparent" };
   const drawingActiveTool = activeTool === "label" ? "pen" as ToolType : activeTool;
 
   const videoTileContainerStyle: React.CSSProperties = isVideoExpanded ? {
     position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", borderRadius: 0, overflow: "hidden", border: "none", zIndex: 1000, background: "#000"
   } : {
-    position: "absolute", bottom: "32px", left: "32px", width: "200px", height: "130px", borderRadius: "16px", overflow: "hidden", border: "3px solid #FFFFFF", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000",
+    position: "absolute", bottom: "clamp(16px,3vw,32px)", left: "clamp(16px,3vw,32px)", width: "clamp(120px,18vw,200px)", height: "clamp(80px,12vw,130px)", borderRadius: "16px", overflow: "hidden", border: "3px solid #FFFFFF", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000",
   };
 
   return (
     <div style={{ height: "100vh", width: "100vw", display: "flex", flexDirection: "column", background: C.bg, overflow: "hidden" }}>
-      <style>{`@keyframes avspin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+@keyframes avspin { to { transform: rotate(360deg); } }
+.classroom-toggle-btn { flex-shrink: 0; }
+.trainer-panel-backdrop { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.4); z-index: 999; }
+.trainer-chat-backdrop { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.4); z-index: 999; }
+@media (max-width: 639px) { .classroom-phone-link { display: none !important; } }
+@media (max-width: 479px) { .classroom-profile-name { display: none !important; } }
+@media (max-width: 767px) {
+  .trainer-left-panel { position: absolute !important; top: 0; left: 0; height: 100%; width: 85% !important; max-width: 320px; z-index: 1000; transform: translateX(-100%); transition: transform 0.3s ease !important; }
+  .trainer-left-panel.open { transform: translateX(0); }
+  .trainer-panel-backdrop, .trainer-chat-backdrop { display: block !important; }
+  .trainer-chat { position: absolute !important; top: 0; right: 0; height: 100%; width: 100% !important; z-index: 1000; transform: translateX(100%); transition: transform 0.3s ease !important; border-left: none !important; }
+  .trainer-chat.open { transform: translateX(0); }
+}
+@media (min-width: 768px) {
+  .trainer-left-panel { position: relative !important; transform: none !important; width: auto !important; max-width: none !important; }
+  .trainer-chat { position: relative !important; transform: none !important; }
+  .trainer-panel-backdrop, .trainer-chat-backdrop { display: none !important; }
+}
+`}</style>
       <DailyAudio />
 
       {/* App Bar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "rgba(249, 249, 249, 0.8)", backdropFilter: "blur(20px)", borderBottom: `0.33px solid ${C.separator}`, flexShrink: 0, zIndex: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "clamp(8px,1.5vw,10px) clamp(12px,2vw,16px)", background: "rgba(249, 249, 249, 0.8)", backdropFilter: "blur(20px)", borderBottom: `0.33px solid ${C.separator}`, flexShrink: 0, zIndex: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "200px" }}>
           {settings?.logo && <img src={settings.logo} alt="Logo" style={{ width: "32px", height: "32px", borderRadius: "8px", objectFit: "cover" }} />}
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: C.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{settings?.businessName || "SmartPages"}</h1>
-            {settings?.phone && <a href={`tel:${settings.phone}`} style={{ fontSize: "12px", color: C.textTertiary, textDecoration: "none", whiteSpace: "nowrap" }}>{settings.phone}</a>}
+            <h1 style={{ margin: 0, fontSize: "clamp(14px,1.5vw,16px)", fontWeight: "700", color: C.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{settings?.businessName || "SmartPages"}</h1>
+            {settings?.phone && <a href={`tel:${settings.phone}`} className="classroom-phone-link" style={{ fontSize: "12px", color: C.textTertiary, textDecoration: "none", whiteSpace: "nowrap" }}>{settings.phone}</a>}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
@@ -400,16 +419,21 @@ export default function TrainerLiveClassroom() {
             ) : (
               <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: C.card, color: C.purple, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: "700" }}>{(trainer?.username as string)?.charAt(0).toUpperCase()}</div>
             )}
-            <span style={{ fontSize: "13px", fontWeight: "600", color: C.purple }}>{(trainer?.username as string) || "Trainer"}</span>
+            <span className="classroom-profile-name" style={{ fontSize: "13px", fontWeight: "600", color: C.purple }}>{(trainer?.username as string) || "Trainer"}</span>
           </div>
-          <button onClick={() => setIsLeftCollapsed(!isLeftCollapsed)} style={{ width: "36px", height: "36px", borderRadius: "9px", background: "rgba(118, 118, 128, 0.12)", border: "none", cursor: "pointer" }} title="Toggle Controls"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
-          <button onClick={handleLogout} style={{ width: "36px", height: "36px", borderRadius: "9px", background: C.redBg, border: "none", cursor: "pointer", color: C.red }} title="Logout"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+          <button onClick={() => setIsLeftCollapsed(!isLeftCollapsed)} className="classroom-toggle-btn" style={{ width: "36px", height: "36px", borderRadius: "9px", background: "rgba(118, 118, 128, 0.12)", border: "none", cursor: "pointer" }} title="Toggle Controls"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+          <button onClick={handleLogout} className="classroom-toggle-btn" style={{ width: "36px", height: "36px", borderRadius: "9px", background: C.redBg, border: "none", cursor: "pointer", color: C.red }} title="Logout"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+        {/* Mobile backdrop for left drawer */}
+        {!isLeftCollapsed && <div className="trainer-panel-backdrop" onClick={() => setIsLeftCollapsed(true)} />}
+        {/* Mobile backdrop for chat drawer */}
+        {isChatOpen && <div className="trainer-chat-backdrop" onClick={() => setIsChatOpen(false)} />}
+
         {/* Left control panel */}
-        <div style={{ flex: isLeftCollapsed ? "0 0 0px" : "0 0 240px", minWidth: isLeftCollapsed ? "0" : "200px", overflow: "hidden", transition: "flex 0.3s ease", background: C.panelBg, display: "flex", flexDirection: "column" }}>
+        <div className={`trainer-left-panel${!isLeftCollapsed ? " open" : ""}`} style={{ flex: isLeftCollapsed ? "0 0 0px" : "0 0 240px", minWidth: isLeftCollapsed ? "0" : "200px", overflow: "hidden", transition: "flex 0.3s ease", background: C.panelBg, display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "12px", margin: "12px", background: C.card, borderRadius: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "10px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <button onClick={() => navigate("/trainer")} style={{ background: "none", border: "none", color: C.medBlue, cursor: "pointer", display: "flex", alignItems: "center", padding: 0, gap: "4px", fontSize: "14px", fontWeight: "600" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>Exit</button>
@@ -431,8 +455,8 @@ export default function TrainerLiveClassroom() {
                 <div key={hand.user_id as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px", background: C.orangeBg, borderRadius: "8px" }}>
                   <span style={{ fontSize: "13px", fontWeight: "600" }}>{hand.username || "Unknown"}</span>
                   <div style={{ display: "flex", gap: "6px" }}>
-                    <button onClick={() => grantPermission(hand.user_id as string, "audio")} style={{ background: C.green, color: "#fff", border: "none", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>🎤 Mic</button>
-                    <button onClick={() => grantPermission(hand.user_id as string, "video")} style={{ background: C.medBlue, color: "#fff", border: "none", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>📹 Cam</button>
+                    <button onClick={() => grantPermission(hand.user_id as string, "audio")} style={{ background: C.green, color: "#fff", border: "none", padding: "clamp(4px,1vw,6px) clamp(8px,1.5vw,10px)", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>🎤 Mic</button>
+                    <button onClick={() => grantPermission(hand.user_id as string, "video")} style={{ background: C.medBlue, color: "#fff", border: "none", padding: "clamp(4px,1vw,6px) clamp(8px,1.5vw,10px)", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>📹 Cam</button>
                   </div>
                 </div>
               ))}</div>}
@@ -464,8 +488,8 @@ export default function TrainerLiveClassroom() {
               })}
             </div>
 
-            <p style={{ fontSize: "13px", color: C.textTertiary, fontWeight: "600", margin: "0 0 8px 0" }}>Lesson Pages</p>
-            {materials.map((mat) => { const meta = getFileMeta(mat.fileType); const isActive = liveState?.materialId === mat.id && !isBlackboardMode; return (<div key={mat.id} onClick={() => selectPage(mat.id)} style={{ display: "flex", alignItems: "center", padding: "12px", gap: "10px", cursor: "pointer", background: isActive ? C.medBlueBg : C.card, borderRadius: "10px", marginBottom: "6px" }}><div style={{ width: "32px", height: "32px", borderRadius: "8px", background: meta.bg, color: meta.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>{meta.icon}</div><div style={{ fontSize: "14px", color: isActive ? C.medBlue : C.textPrimary, fontWeight: isActive ? "600" : "500" }}>{mat.title}</div></div>); })}
+            <p style={{ fontSize: "13px", color: C.textTertiary, fontWeight: "600", margin: "0 0 8px 0" }}>Lesson pages</p>
+            {materials.map((mat) => { const meta = getFileMeta(mat.fileType); const isActive = liveState?.materialId === mat.id && !isBlackboardMode; return (<div key={mat.id} onClick={() => selectPage(mat.id)} style={{ display: "flex", alignItems: "center", padding: "clamp(10px,1vw,12px)", gap: "10px", cursor: "pointer", background: isActive ? C.medBlueBg : C.card, borderRadius: "10px", marginBottom: "6px" }}><div style={{ width: "32px", height: "32px", borderRadius: "8px", background: meta.bg, color: meta.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>{meta.icon}</div><div style={{ fontSize: "14px", color: isActive ? C.medBlue : C.textPrimary, fontWeight: isActive ? "600" : "500" }}>{mat.title}</div></div>); })}
           </div>
         </div>
 
@@ -473,19 +497,19 @@ export default function TrainerLiveClassroom() {
         <div style={{ flex: "1 1 auto", minWidth: 0, background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
           <div style={{ flex: 1, display: "flex", width: "200%", height: "100%", transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)", transform: isBlackboardMode ? "translateX(-50%)" : "translateX(0%)" }}>
             <div style={{ width: "50%", height: "100%", flexShrink: 0, display: "flex", flexDirection: "column", background: C.card, overflow: "hidden", position: "relative" }}>
-              {presentation ? <LiveClassView material={presentation} page={liveState?.currentPage ?? 1} /> : <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><p style={{ color: C.textTertiary, fontSize: "15px" }}>{materials.length > 0 ? "Select a page from the sidebar." : "Upload pages first."}</p></div>}
+              {presentation ? <LiveClassView material={presentation} page={liveState?.currentPage ?? 1} /> : <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><p style={{ color: C.textTertiary, fontSize: "clamp(13px,1.5vw,15px)" }}>{materials.length > 0 ? "Select a page from the sidebar." : "Upload pages first."}</p></div>}
             </div>
             <div style={{ width: "50%", height: "100%", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: "#1A1A1A" }}>
               <div style={{ flex: 1, position: "relative", overflow: "hidden", cursor: activeTool === "label" ? "crosshair" : undefined }} onClick={activeTool === "label" ? handleCanvasClick : undefined}>
                 <DrawingBlackboard isTrainer={true} strokes={liveState?.blackboardStrokes || []} onStrokeEnd={handleStrokeEnd} onErase={handleErase} activeTool={drawingActiveTool} penColor={penColor} penWidth={penWidth} eraserSize={eraserSize} fontFamily={fontOptions.fontFamily} fontSize={fontOptions.fontSize} fontColor={fontOptions.fontColor} fontWeight={fontOptions.fontWeight} fontStyle={fontOptions.fontStyle} courseId={courseId!} />
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#111", padding: "8px 12px", overflowX: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#111", padding: "clamp(6px,1vw,8px) clamp(8px,1.5vw,12px)", overflowX: "auto" }}>
                 <button onClick={() => selectTool("pen")} title="Pen" style={toolBtnStyle(activeTool === "pen")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg></button>
                 <button onClick={() => selectTool("eraser")} title="Eraser" style={toolBtnStyle(activeTool === "eraser")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 20H7L3 16C2.5 15.5 2.5 14.5 3 14L13 4L20 11L11 20"/></svg></button>
                 {activeTool === "pen" && <label style={{ ...toolBtnStyle(false), width: "auto", padding: "0 8px", gap: "6px" }}><input type="color" value={penColor} onChange={e => setPenColor(e.target.value)} style={{ width: "22px", height: "22px", border: "none", background: "none", cursor: "pointer", padding: 0 }} /></label>}
                 {activeTool === "pen" && <input type="range" min="1" max="20" value={penWidth} onChange={e => setPenWidth(Number(e.target.value))} style={{ width: "60px", accentColor: "#00A5F4" }} />}
                 {activeTool === "eraser" && <input type="range" min="10" max="100" value={eraserSize} onChange={e => setEraserSize(Number(e.target.value))} style={{ width: "80px", accentColor: "#00A5F4" }} />}
-                <input type="text" placeholder={activeTool === "label" ? "Click board to pin..." : "Type to write..."} value={bbInput} onChange={(e) => setBbInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && activeTool !== "label") sendBlackboardLine(); }} style={{ flex: 1, minWidth: "100px", background: "transparent", border: "none", outline: "none", color: "#FFF", fontSize: "15px" }} />
+                <input type="text" placeholder={activeTool === "label" ? "Click board to pin..." : "Type to write..."} value={bbInput} onChange={(e) => setBbInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && activeTool !== "label") sendBlackboardLine(); }} style={{ flex: 1, minWidth: "clamp(80px,12vw,100px)", background: "transparent", border: "none", outline: "none", color: "#FFF", fontSize: "15px" }} />
                 <button onClick={() => bbInput.trim() && selectTool("label")} title="Pin Label" style={toolBtnStyle(activeTool === "label")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg></button>
                 <button onClick={sendBlackboardLine} style={{ width: "36px", height: "36px", borderRadius: "50%", border: "none", background: bbInput.trim() && activeTool !== "label" ? "#00A5F4" : "rgba(255,255,255,0.1)", color: bbInput.trim() && activeTool !== "label" ? "#fff" : "#666", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
                 <button onClick={clearBlackboard} title="Clear Board" style={{ width: "44px", height: "44px", borderRadius: "12px", border: "none", background: "transparent", color: "#FF3B30", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
@@ -494,7 +518,7 @@ export default function TrainerLiveClassroom() {
           </div>
 
           {/* Floating CLASSROOM AV bar — trainer's own mic/cam (not chat) */}
-          <div style={{ position: "absolute", bottom: "24px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "16px", padding: "10px", background: "rgba(28, 28, 30, 0.8)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.1)", zIndex: 20 }}>
+          <div style={{ position: "absolute", bottom: "clamp(12px,2vw,24px)", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "clamp(8px,1.5vw,16px)", padding: "clamp(8px,1vw,10px)", background: "rgba(28, 28, 30, 0.8)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.1)", zIndex: 20 }}>
             <button onClick={() => navigate("/trainer")} style={{ ...avBtnStyle, background: "#E5E5EA", color: "#1C1C1E" }} title="Exit classroom">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
@@ -526,7 +550,7 @@ export default function TrainerLiveClassroom() {
         </div>
 
         {/* Chat Sidebar — TEXT + FILES ONLY. No audio/video controls here. */}
-        <div style={{ width: isChatOpen ? "360px" : "64px", minWidth: 0, transition: "width 0.3s ease", flexShrink: 0, borderLeft: "1px solid #E5E5EA", background: "#1C1C1E" }}>
+        <div className={`trainer-chat${isChatOpen ? " open" : ""}`} style={{ width: isChatOpen ? "360px" : "64px", minWidth: 0, transition: "width 0.3s ease", flexShrink: 0, borderLeft: "1px solid #E5E5EA", background: "#1C1C1E" }}>
           <ClassChat 
             courseId={courseId || ""} 
             isChatOpen={isChatOpen}

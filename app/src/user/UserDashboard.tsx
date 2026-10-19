@@ -112,7 +112,7 @@ function SkeletonCourseCard() {
 
   return (
     <div style={{ background: C.card, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", border: `1px solid ${C.separator}` }}>
-      <div style={{ width: "100%", height: "220px", ...shimmerStyle }} />
+      <div className="course-card-image" style={{ width: "100%", aspectRatio: "16 / 9", height: "auto", ...shimmerStyle }} />
       <div style={{ padding: "20px", borderBottom: `1px solid ${C.separator}`, flex: 1 }}>
         <div style={{ width: "70%", height: "18px", marginBottom: "10px", ...shimmerStyle }} />
         <div style={{ width: "100%", height: "14px", ...shimmerStyle }} />
@@ -451,8 +451,8 @@ export default function UserDashboard() {
 
   return (
     <div style={{ minHeight: "100vh", background: C.card, fontFamily: FONT, WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale" }}>
-      <div style={{ borderBottom: `1px solid ${C.separator}`, padding: "12px 24px", position: "sticky", top: 0, zIndex: 10, width: "100%", boxSizing: "border-box", background: C.card }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+      <div style={{ borderBottom: `1px solid ${C.separator}`, padding: "clamp(10px, 2vw, 12px) clamp(12px, 3vw, 24px)", position: "sticky", top: 0, zIndex: 10, width: "100%", boxSizing: "border-box", background: C.card }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
             {business?.logo ? (
               <img
@@ -475,7 +475,7 @@ export default function UserDashboard() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...TS.h3, fontSize: 15, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{business?.business_name || "Business"}</div>
               {business?.phone && (
-                <a href={`tel:${business.phone}`} style={{ ...TS.label, color: C.medBlue, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                <a href={`tel:${business.phone}`} className="header-phone-link" style={{ ...TS.label, color: C.medBlue, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginTop: 2 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
                   {business.phone}
                 </a>
@@ -507,7 +507,7 @@ export default function UserDashboard() {
                 {currentUser?.username?.charAt(0).toUpperCase()}
               </div>
             )}
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.purple, whiteSpace: "nowrap" }}>{currentUser?.username || "User"}</span>
+            <span className="profile-chip-username" style={{ fontSize: 13, fontWeight: 600, color: C.purple, whiteSpace: "nowrap" }}>{currentUser?.username || "User"}</span>
           </div>
 
           {/* NEW: Forms button with pending-count badge */}
@@ -535,11 +535,11 @@ export default function UserDashboard() {
         </div>
       </div>
 
-      <div style={{ flex: 1, padding: "40px 48px 40px", width: "100%", boxSizing: "border-box" }}>
+      <div style={{ flex: 1, padding: "clamp(20px, 4vw, 40px) clamp(16px, 4vw, 48px)", width: "100%", boxSizing: "border-box" }}>
         <h2 style={{ ...TS.caption, margin: "0 0 20px 0" }}>My Courses</h2>
 
         {loading && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))", gap: "clamp(12px, 2vw, 20px)" }}>
             <SkeletonCourseCard />
             <SkeletonCourseCard />
             <SkeletonCourseCard />
@@ -547,18 +547,18 @@ export default function UserDashboard() {
         )}
 
         {!loading && courses.length === 0 && (
-          <div style={{ padding: "80px 40px", textAlign: "center", width: "100%", boxSizing: "border-box" }}>
+          <div style={{ padding: "clamp(40px, 8vw, 80px) clamp(20px, 4vw, 40px)", textAlign: "center", width: "100%", boxSizing: "border-box" }}>
             <div style={{ width: 72, height: 72, borderRadius: "50%", background: C.medBlueBg, margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={C.medBlue} strokeWidth="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
             </div>
-            <h3 style={{ ...TS.h3, fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>No Courses Assigned</h3>
+            <h3 style={{ ...TS.h3, fontSize: "clamp(18px, 2vw, 20px)", fontWeight: 700, margin: "0 0 8px" }}>No Courses Assigned</h3>
             <p style={{ ...TS.bodySm, margin: "0 0 32px" }}>Your administrator has not assigned any courses to you yet.</p>
-            <button onClick={() => window.location.reload()} style={{ ...TS.input, padding: "14px 36px", background: C.medBlue, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 16, cursor: "pointer" }}>Check Again</button>
+            <button onClick={() => window.location.reload()} style={{ ...TS.input, padding: "14px clamp(20px, 4vw, 36px)", background: C.medBlue, color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: 16, cursor: "pointer" }}>Check Again</button>
           </div>
         )}
 
         {!loading && courses.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "20px", width: "100%" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))", gap: "clamp(12px, 2vw, 20px)", width: "100%" }}>
             {courses.map((course) => {
               const isLive = (liveCourseIds || []).includes(course.id);
               const isAttendingThis = activeAttendanceCourseId === course.id;
@@ -604,20 +604,20 @@ export default function UserDashboard() {
               return (
                 <div key={course.id} style={courseCardStyle}>
                   {course.logo && (
-                    <div style={{ position: "relative", width: "100%", height: "220px" }}>
+                    <div className="course-card-image" style={{ position: "relative", width: "100%", aspectRatio: "16 / 9", height: "auto" }}>
                       <img src={course.logo} alt={course.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: "50%", background: "linear-gradient(to top, rgba(0,0,0,0.5), transparent)" }} />
                     </div>
                   )}
 
-                  <div style={{ padding: "20px", borderBottom: `1px solid ${C.separator}`, flex: 1, display: "flex", flexDirection: "column" }}>
-                    <h3 style={{ ...TS.h3, margin: "0 0 6px 0" }}>{course.name}</h3>
+                  <div style={{ padding: "clamp(14px, 2.5vw, 20px)", borderBottom: `1px solid ${C.separator}`, flex: 1, display: "flex", flexDirection: "column" }}>
+                    <h3 style={{ ...TS.h3, fontSize: "clamp(15px, 1.7vw, 17px)", margin: "0 0 6px 0" }}>{course.name}</h3>
                     <p style={{ ...TS.bodySm, margin: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                       {course.description || "No description provided."}
                     </p>
                   </div>
 
-                  <div style={{ padding: "16px 12px", display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+                  <div style={{ padding: "clamp(12px, 1.5vw, 16px) clamp(10px, 1.5vw, 12px)", display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "clamp(8px, 1.5vw, 12px)" }}>
                     <button
                       onClick={() => navigate(`/user/assignments/${course.id}`)}
                       style={{ ...iosBtnStyle, background: C.purpleBg, color: C.purple }}
@@ -661,6 +661,14 @@ export default function UserDashboard() {
           0% { transform: scale(1); opacity: 0.4; }
           70% { transform: scale(2.5); opacity: 0; }
           100% { transform: scale(1); opacity: 0; }
+        }
+      `}</style>
+      <style>{`
+        @media (max-width: 640px) {
+          .header-phone-link { display: none !important; }
+        }
+        @media (max-width: 480px) {
+          .profile-chip-username { display: none !important; }
         }
       `}</style>
     </div>

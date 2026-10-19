@@ -381,13 +381,13 @@ export default function Classroom() {
     navigate("/user");
   }
 
-  const btnStyle: React.CSSProperties = { width: "48px", height: "48px", borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", transition: "transform 0.1s ease" };
+  const btnStyle: React.CSSProperties = { width: "clamp(40px,6vw,48px)", height: "clamp(40px,6vw,48px)", borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", transition: "transform 0.1s ease" };
   const lockBadgeStyle: React.CSSProperties = { position: "absolute", bottom: -3, right: -3, width: 18, height: 18, borderRadius: "50%", background: "#1C1C1E", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, border: "1.5px solid #fff" };
 
   const videoTileContainerStyle: React.CSSProperties = isVideoExpanded ? {
     position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", borderRadius: 0, overflow: "hidden", border: "none", zIndex: 1000, background: "#000"
   } : {
-    position: "absolute", bottom: "32px", left: "32px", width: "200px", height: "130px", borderRadius: "16px", overflow: "hidden", border: "3px solid #FFFFFF", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000",
+    position: "absolute", bottom: "clamp(16px,3vw,32px)", left: "clamp(16px,3vw,32px)", width: "clamp(120px,18vw,200px)", height: "clamp(80px,12vw,130px)", borderRadius: "16px", overflow: "hidden", border: "3px solid #FFFFFF", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000",
   };
 
   // ── Chat sidebar width: 0 = fully collapsed, 360 = open ──
@@ -396,12 +396,50 @@ export default function Classroom() {
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: C.bg, overflow: "hidden" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "rgba(249, 249, 249, 0.8)", backdropFilter: "blur(20px)", borderBottom: `0.33px solid ${C.separator}`, flexShrink: 0, zIndex: 10 }}>
+      <style>{`
+        .classroom-chat {
+          position: relative;
+          transform: none;
+          transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .chat-backdrop {
+          display: none;
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.4);
+          z-index: 999;
+        }
+        @media (max-width: 639px) {
+          .classroom-profile-name { display: none !important; }
+        }
+        @media (max-width: 767px) {
+          .classroom-chat {
+            position: absolute !important;
+            top: 0 !important;
+            right: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            z-index: 1000 !important;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            border-left: none !important;
+          }
+          .classroom-chat.open {
+            transform: translateX(0);
+          }
+          .chat-backdrop {
+            display: block !important;
+          }
+        }
+      `}</style>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "clamp(8px,1.5vw,10px) clamp(12px,2vw,16px)", background: "rgba(249, 249, 249, 0.8)", backdropFilter: "blur(20px)", borderBottom: `0.33px solid ${C.separator}`, flexShrink: 0, zIndex: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
           <button onClick={exitClassroom} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", color: C.medBlue, padding: 0 }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
-          <h1 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#1C1C1E" }}>Classroom</h1>
+          <h1 style={{ margin: 0, fontSize: "clamp(14px,1.5vw,16px)", fontWeight: "700", color: "#1C1C1E" }}>Classroom</h1>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -428,15 +466,16 @@ export default function Classroom() {
                 {dbUser?.username?.charAt(0).toUpperCase()}
               </div>
             )}
-            <span style={{ fontSize: "13px", fontWeight: "600", color: C.purple }}>{dbUser?.username || "Learner"}</span>
+            <span className="classroom-profile-name" style={{ fontSize: "13px", fontWeight: "600", color: C.purple }}>{dbUser?.username || "Learner"}</span>
           </div>
         </div>
       </div>
 
       <DailyAudio />
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        <div style={{ flex: 1, display: "flex", position: "relative", overflow: "hidden", margin: "16px", borderRadius: "16px", boxShadow: "0 4px 20px rgba(0,0,0,0.04)" }}>
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+        {isChatOpen && <div className="chat-backdrop" onClick={() => setIsChatOpen(false)} />}
+        <div style={{ flex: 1, display: "flex", position: "relative", overflow: "hidden", margin: "clamp(8px,1.5vw,16px)", borderRadius: "clamp(12px,1.5vw,16px)", boxShadow: "0 4px 20px rgba(0,0,0,0.04)" }}>
           {/* Presentation view */}
           <div style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, transition: "transform 0.2s ease", transform: isBlackboardMode ? "translateX(-100%)" : "translateX(0%)", background: C.card, display: "flex" }}>
             {presentation ? <LiveClassView material={presentation} page={liveState?.currentPage ?? 1} /> : (
@@ -444,7 +483,7 @@ export default function Classroom() {
                 <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: C.medBlueBg, margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={C.medBlue} strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 </div>
-                <p style={{ fontSize: "20px", fontWeight: "600" }}>{isLive ? "Waiting for Trainer" : "Class is not live"}</p>
+                <p style={{ fontSize: "clamp(16px,2vw,20px)", fontWeight: "600" }}>{isLive ? "Waiting for Trainer" : "Class is not live"}</p>
                 <p style={{ color: "#8E8E93" }}>{isLive ? "The presentation will appear here once it starts." : "Please wait for the trainer to start the session."}</p>
               </div>
             )}
@@ -455,13 +494,13 @@ export default function Classroom() {
           </div>
 
           {hasRaisedHand && !hasMicPermission && !hasCamPermission && (
-            <div style={{ position: "absolute", bottom: "96px", left: "50%", transform: "translateX(-50%)", background: C.orangeBg, color: "#B96A00", padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, zIndex: 11, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
+            <div style={{ position: "absolute", bottom: "clamp(72px,8vw,96px)", left: "50%", transform: "translateX(-50%)", background: C.orangeBg, color: "#B96A00", padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, zIndex: 11, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
               🖐️ Hand raised — waiting for trainer activation…
             </div>
           )}
 
           {/* Bottom control bar */}
-          <div style={{ position: "absolute", bottom: "24px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "16px", padding: "10px", background: "rgba(28, 28, 30, 0.8)", backdropFilter: "blur(20px)", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.1)", zIndex: 10 }}>
+          <div style={{ position: "absolute", bottom: "clamp(12px,2vw,24px)", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "clamp(8px,1.5vw,16px)", padding: "clamp(8px,1vw,10px)", background: "rgba(28, 28, 30, 0.8)", backdropFilter: "blur(20px)", borderRadius: "32px", border: "1px solid rgba(255,255,255,0.1)", zIndex: 10 }}>
             <button onClick={exitClassroom} style={{ ...btnStyle, background: "#E5E5EA", color: "#1C1C1E" }} title="Exit">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8z"/><path d="M19 12l-4 4-4-4-4 4V3h12v9z" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
             </button>
@@ -491,7 +530,7 @@ export default function Classroom() {
 
           {/* My self-view */}
           {isCamOn && localVideoTrack && (
-            <div style={{ position: "absolute", bottom: "32px", right: "32px", width: "160px", height: "110px", borderRadius: "16px", overflow: "hidden", border: `3px solid ${C.green}`, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000" }}>
+            <div style={{ position: "absolute", bottom: "clamp(16px,3vw,32px)", right: "clamp(16px,3vw,32px)", width: "clamp(100px,14vw,160px)", height: "clamp(70px,9vw,110px)", borderRadius: "16px", overflow: "hidden", border: `3px solid ${C.green}`, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, background: "#000" }}>
               <video autoPlay muted playsInline ref={(el) => { if (el && localVideoTrack) { const stream = new MediaStream([localVideoTrack]); if (el.srcObject !== stream) el.srcObject = stream; } }} style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />
             </div>
           )}
@@ -508,15 +547,18 @@ export default function Classroom() {
         </div>
 
         {/* ── Chat sidebar: fully collapses to 0px for fullscreen ── */}
-        <div style={{
-          width: chatWidth,
-          minWidth: 0,
-          transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-          flexShrink: 0,
-          borderLeft: isChatOpen ? "1px solid #E5E5EA" : "none",
-          background: "#1C1C1E",
-          overflow: "hidden",
-        }}>
+        <div
+          className={`classroom-chat${isChatOpen ? " open" : ""}`}
+          style={{
+            width: chatWidth,
+            minWidth: 0,
+            transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            flexShrink: 0,
+            borderLeft: isChatOpen ? "1px solid #E5E5EA" : "none",
+            background: "#1C1C1E",
+            overflow: "hidden",
+          }}
+        >
           {/* Keep ClassChat mounted so realtime stays connected;
               it renders null internally when isChatOpen=false */}
           <ClassChat
@@ -533,10 +575,10 @@ export default function Classroom() {
             title="Open chat"
             style={{
               position: "absolute",
-              right: 20,
-              bottom: 100,
-              width: 52,
-              height: 52,
+              right: "clamp(12px,2vw,20px)",
+              bottom: "clamp(80px,8vw,100px)",
+              width: "clamp(44px,6vw,52px)",
+              height: "clamp(44px,6vw,52px)",
               borderRadius: "50%",
               background: "#AF52DE",
               border: "none",
