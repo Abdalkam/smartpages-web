@@ -18,9 +18,9 @@ export default defineConfig({
         navigateFallback: null,
       },
       manifest: {
-        name: 'MedStat',
-        short_name: 'MedStat',
-        description: 'MedStat Healthcare Training App',
+        name: 'Medstat Initiative',
+        short_name: 'Medstat',
+        description: 'Research and Training',
         theme_color: '#007AFF',
         background_color: '#F2F2F7',
         display: 'standalone',
