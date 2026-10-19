@@ -1,3 +1,4 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { DailyProvider } from "@daily-co/daily-react";
@@ -41,148 +42,148 @@ import FormFiller, { FormsHome } from "./components/FormFiller";
 // COMPONENTS
 import ProfileSettings from "./components/ProfileSettings";
 
-// 🛑 BLOCK NATIVE BROWSER DIALOGS
+// Suppress native browser dialogs (alert / confirm / prompt) so the iOS-style
+// in-app modals are the only UI surface. Logs the suppressed message so
+// debugging is still possible from DevTools.
 if (typeof window !== "undefined") {
-  window.alert = (message) => { console.warn("🚨 ALERT SUPPRESSED:", message); };
-  window.confirm = (message) => { console.warn("🚨 CONFIRM SUPPRESSED (auto-false):", message); return false; };
-  window.prompt = (message, _default) => { console.warn("🚨 PROMPT SUPPRESSED (auto-null):", message); return null; };
+  window.alert = (message) => { console.warn("[alert suppressed]:", message); };
+  window.confirm = (message) => { console.warn("[confirm suppressed → false]:", message); return false; };
+  window.prompt = (message, _default) => { console.warn("[prompt suppressed → null]:", message); return null; };
 }
 
 export default function App() {
-    const [isSynced, setIsSynced] = useState(false);
+  const [isSynced, setIsSynced] = useState(false);
 
-    const [currentUser, setCurrentUser] = useState<any>(() => {
-        const saved = localStorage.getItem("currentUser");
-        return saved ? JSON.parse(saved) : null;
-    });
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    const saved = localStorage.getItem("currentUser");
+    return saved ? JSON.parse(saved) : null;
+  });
 
-    // ✅ SILENT TAURI AUTO-UPDATE (No UI)
-    useEffect(() => {
-        const checkTauriUpdate = async () => {
-            if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  // Silent Tauri auto-update — only runs inside the Tauri webview, no UI.
+  useEffect(() => {
+    const checkTauriUpdate = async () => {
+      if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
 
-            try {
-                const { check } = await import('@tauri-apps/plugin-updater');
-                const { relaunch } = await import('@tauri-apps/plugin-process');
+      try {
+        const { check } = await import("@tauri-apps/plugin-updater");
+        const { relaunch } = await import("@tauri-apps/plugin-process");
 
-                const update = await check();
-                if (update) {
-                    // Download and install completely silently
-                    await update.downloadAndInstall();
-                    await relaunch();
-                }
-            } catch (err) {
-                console.error('Tauri update check failed:', err);
-            }
-        };
-
-        const timer = setTimeout(checkTauriUpdate, 5000);
-        return () => clearTimeout(timer);
-    }, []);
-
-    useEffect(() => {
-        const loadUser = () => {
-            const saved = localStorage.getItem("currentUser");
-            const parsedUser = saved ? JSON.parse(saved) : null;
-            setCurrentUser((prev: any) => {
-                if (prev?.id === parsedUser?.id) return prev;
-                return parsedUser;
-            });
-        };
-        loadUser();
-        window.addEventListener("authStateChanged", loadUser);
-        return () => window.removeEventListener("authStateChanged", loadUser);
-    }, []);
-
-    const getDashboardPath = (role: string) => {
-        if (role === "admin") return "/admin";
-        if (role === "trainer") return "/trainer";
-        return "/user";
+        const update = await check();
+        if (update) {
+          await update.downloadAndInstall();
+          await relaunch();
+        }
+      } catch (err) {
+        console.error("Tauri update check failed:", err);
+      }
     };
 
-    const ProtectedAdmin = useCallback(({ children }: { children: React.ReactNode }) => {
-        if (!currentUser) return <Navigate to="/login" replace />;
-        if (currentUser.role !== "admin") return <Navigate to={getDashboardPath(currentUser.role)} replace />;
-        return <>{children}</>;
-    }, [currentUser]);
+    const timer = setTimeout(checkTauriUpdate, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
-    const ProtectedTrainer = useCallback(({ children }: { children: React.ReactNode }) => {
-        if (!currentUser) return <Navigate to="/login" replace />;
-        if (currentUser.role !== "trainer" && currentUser.role !== "admin") return <Navigate to={getDashboardPath(currentUser.role)} replace />;
-        return <>{children}</>;
-    }, [currentUser]);
+  // Re-hydrate currentUser whenever the auth state changes (login / logout).
+  useEffect(() => {
+    const loadUser = () => {
+      const saved = localStorage.getItem("currentUser");
+      const parsedUser = saved ? JSON.parse(saved) : null;
+      setCurrentUser((prev: any) => {
+        if (prev?.id === parsedUser?.id) return prev;
+        return parsedUser;
+      });
+    };
+    loadUser();
+    window.addEventListener("authStateChanged", loadUser);
+    return () => window.removeEventListener("authStateChanged", loadUser);
+  }, []);
 
-    const ProtectedUser = useCallback(({ children }: { children: React.ReactNode }) => {
-        if (!currentUser) return <Navigate to="/login" replace />;
-        if (currentUser.role !== "trainee") return <Navigate to={getDashboardPath(currentUser.role)} replace />;
-        return <>{children}</>;
-    }, [currentUser]);
+  const getDashboardPath = (role: string) => {
+    if (role === "admin") return "/admin";
+    if (role === "trainer") return "/trainer";
+    return "/user";
+  };
 
-    // Any logged-in role may use shared forms (trainer, trainee, admin)
-    const ProtectedAll = useCallback(({ children }: { children: React.ReactNode }) => {
-        if (!currentUser) return <Navigate to="/login" replace />;
-        return <>{children}</>;
-    }, [currentUser]);
+  const ProtectedAdmin = useCallback(({ children }: { children: React.ReactNode }) => {
+    if (!currentUser) return <Navigate to="/login" replace />;
+    if (currentUser.role !== "admin") return <Navigate to={getDashboardPath(currentUser.role)} replace />;
+    return <>{children}</>;
+  }, [currentUser]);
 
-    // Unknown URL — log it so routing bugs are visible, then send the user
-    // to their dashboard (or login) instead of bouncing through /login.
-    const Fallback = useCallback(() => {
-        console.warn("⚠ Unmatched route:", window.location.pathname);
-        return <Navigate to={currentUser ? getDashboardPath(currentUser.role) : "/login"} replace />;
-    }, [currentUser]);
+  const ProtectedTrainer = useCallback(({ children }: { children: React.ReactNode }) => {
+    if (!currentUser) return <Navigate to="/login" replace />;
+    if (currentUser.role !== "trainer" && currentUser.role !== "admin") return <Navigate to={getDashboardPath(currentUser.role)} replace />;
+    return <>{children}</>;
+  }, [currentUser]);
 
-    return (
-        <DailyProvider>
-            <BrowserRouter basename="/app">
-                {/* ✅ SHOW SYNC LOADING SCREEN FIRST */}
-                {!isSynced ? (
-                    <SyncLoadingScreen onSyncComplete={() => setIsSynced(true)} />
-                ) : (
-                    <Routes>
-                        <Route path="/login" element={currentUser ? <Navigate to={getDashboardPath(currentUser.role)} replace /> : <Startup />} />
-                        <Route path="/" element={currentUser ? <Navigate to={getDashboardPath(currentUser.role)} replace /> : <Startup />} />
+  const ProtectedUser = useCallback(({ children }: { children: React.ReactNode }) => {
+    if (!currentUser) return <Navigate to="/login" replace />;
+    if (currentUser.role !== "trainee") return <Navigate to={getDashboardPath(currentUser.role)} replace />;
+    return <>{children}</>;
+  }, [currentUser]);
 
-                        {/* ADMIN — main suite: ALL admin pages inside the layout, incl. Forms */}
-                        <Route path="/admin" element={<ProtectedAdmin><AdminLayout user={currentUser} /></ProtectedAdmin>}>
-                            <Route index element={<AdminDashboard />} />
-                            <Route path="users" element={<UserManagement />} />
-                            <Route path="courses" element={<CourseManagement />} />
-                            <Route path="sms" element={<SMSManagement />} />
-                            <Route path="settings" element={<Settings />} />
+  // Any logged-in role may use shared forms (trainer, trainee, admin).
+  const ProtectedAll = useCallback(({ children }: { children: React.ReactNode }) => {
+    if (!currentUser) return <Navigate to="/login" replace />;
+    return <>{children}</>;
+  }, [currentUser]);
 
-                            {/* FORMS — inside the layout, like every other admin page.
-                                The ONLY forms routes in this file. */}
-                            <Route path="forms" element={<AdminForms />} />
-                            <Route path="forms/new" element={<AdminFormBuilder />} />
-                            <Route path="forms/:formId/edit" element={<AdminFormBuilder />} />
-                            <Route path="forms/:formId/responses" element={<AdminFormSubmissions />} />
-                            <Route path="forms/:formId/submissions" element={<AdminFormSubmissions />} />
-                        </Route>
+  // Unknown URL — log it so routing bugs are visible, then send the user
+  // to their dashboard (or login) instead of bouncing through /login.
+  const Fallback = useCallback(() => {
+    console.warn("Unmatched route:", window.location.pathname);
+    return <Navigate to={currentUser ? getDashboardPath(currentUser.role) : "/login"} replace />;
+  }, [currentUser]);
 
-                        {/* TRAINER */}
-                        <Route path="/trainer" element={<ProtectedTrainer><TrainerDashboard /></ProtectedTrainer>} />
-                        <Route path="/trainer/settings" element={<ProtectedTrainer><ProfileSettings role="trainer" /></ProtectedTrainer>} />
-                        <Route path="/trainer/upload/:courseId" element={<ProtectedTrainer><UploadMaterials /></ProtectedTrainer>} />
-                        <Route path="/trainer/live/:courseId" element={<ProtectedTrainer><TrainerLiveClassroom /></ProtectedTrainer>} />
-                        <Route path="/trainer/assignments/:courseId" element={<ProtectedTrainer><TrainerAssignments /></ProtectedTrainer>} />
-                        <Route path="/trainer/assignment-builder/:courseId/:assignmentId?" element={<ProtectedTrainer><AssignmentBuilder /></ProtectedTrainer>} />
-                        <Route path="/trainer/submissions/:assignmentId" element={<ProtectedTrainer><TrainerSubmissions /></ProtectedTrainer>} />
+  return (
+    <DailyProvider>
+      <BrowserRouter basename="/app">
+        {!isSynced ? (
+          <SyncLoadingScreen onSyncComplete={() => setIsSynced(true)} />
+        ) : (
+          <Routes>
+            <Route path="/login" element={currentUser ? <Navigate to={getDashboardPath(currentUser.role)} replace /> : <Startup />} />
+            <Route path="/" element={currentUser ? <Navigate to={getDashboardPath(currentUser.role)} replace /> : <Startup />} />
 
-                        {/* USER */}
-                        <Route path="/user" element={<ProtectedUser><UserDashboard /></ProtectedUser>} />
-                        <Route path="/user/settings" element={<ProtectedUser><ProfileSettings role="trainee" /></ProtectedUser>} />
-                        <Route path="/user/assignments/:courseId" element={<ProtectedUser><UserAssignments /></ProtectedUser>} />
-                        <Route path="/user/assignment-taker/:assignmentId" element={<ProtectedUser><UserAssignmentTaker /></ProtectedUser>} />
-                        <Route path="/user/classroom/:courseId" element={<ProtectedUser><Classroom /></ProtectedUser>} />
+            {/* ADMIN — main suite: all admin pages inside the layout, incl. Forms */}
+            <Route path="/admin" element={<ProtectedAdmin><AdminLayout user={currentUser} /></ProtectedAdmin>}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="users" element={<UserManagement />} />
+              <Route path="courses" element={<CourseManagement />} />
+              <Route path="sms" element={<SMSManagement />} />
+              <Route path="settings" element={<Settings />} />
 
-                        {/* SHARED FORMS — trainers AND trainees (admins too) */}
-                        <Route path="/forms" element={<ProtectedAll><FormsHome /></ProtectedAll>} />
-                        <Route path="/forms/:formId" element={<ProtectedAll><FormFiller /></ProtectedAll>} />
+              {/* Forms — inside the layout, like every other admin page. */}
+              <Route path="forms" element={<AdminForms />} />
+              <Route path="forms/new" element={<AdminFormBuilder />} />
+              <Route path="forms/:formId/edit" element={<AdminFormBuilder />} />
+              <Route path="forms/:formId/responses" element={<AdminFormSubmissions />} />
+              <Route path="forms/:formId/submissions" element={<AdminFormSubmissions />} />
+            </Route>
 
-                        <Route path="*" element={<Fallback />} />
-                    </Routes>
-                )}
-            </BrowserRouter>
-        </DailyProvider>
-    );
+            {/* TRAINER */}
+            <Route path="/trainer" element={<ProtectedTrainer><TrainerDashboard /></ProtectedTrainer>} />
+            <Route path="/trainer/settings" element={<ProtectedTrainer><ProfileSettings role="trainer" /></ProtectedTrainer>} />
+            <Route path="/trainer/upload/:courseId" element={<ProtectedTrainer><UploadMaterials /></ProtectedTrainer>} />
+            <Route path="/trainer/live/:courseId" element={<ProtectedTrainer><TrainerLiveClassroom /></ProtectedTrainer>} />
+            <Route path="/trainer/assignments/:courseId" element={<ProtectedTrainer><TrainerAssignments /></ProtectedTrainer>} />
+            <Route path="/trainer/assignment-builder/:courseId/:assignmentId?" element={<ProtectedTrainer><AssignmentBuilder /></ProtectedTrainer>} />
+            <Route path="/trainer/submissions/:assignmentId" element={<ProtectedTrainer><TrainerSubmissions /></ProtectedTrainer>} />
+
+            {/* USER */}
+            <Route path="/user" element={<ProtectedUser><UserDashboard /></ProtectedUser>} />
+            <Route path="/user/settings" element={<ProtectedUser><ProfileSettings role="trainee" /></ProtectedUser>} />
+            <Route path="/user/assignments/:courseId" element={<ProtectedUser><UserAssignments /></ProtectedUser>} />
+            <Route path="/user/assignment-taker/:assignmentId" element={<ProtectedUser><UserAssignmentTaker /></ProtectedUser>} />
+            <Route path="/user/classroom/:courseId" element={<ProtectedUser><Classroom /></ProtectedUser>} />
+
+            {/* SHARED FORMS — trainers AND trainees (admins too) */}
+            <Route path="/forms" element={<ProtectedAll><FormsHome /></ProtectedAll>} />
+            <Route path="/forms/:formId" element={<ProtectedAll><FormFiller /></ProtectedAll>} />
+
+            <Route path="*" element={<Fallback />} />
+          </Routes>
+        )}
+      </BrowserRouter>
+    </DailyProvider>
+  );
 }
